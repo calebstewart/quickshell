@@ -171,6 +171,7 @@ private:
 	LRESULT forwardAppBar(WPARAM wParam, const AppBarMessageData& request, bool* forwarded) const;
 
 	void maintain();
+	void askForIcons();
 	void updateListing(TrayItem* item);
 	[[nodiscard]] TrayItem* find(HWND window, UINT iconId, const GUID& guid, bool hasGuid) const;
 	void remove(TrayItem* item);
@@ -181,6 +182,10 @@ private:
 	QList<TrayItem*> all;
 	ObjectModel<TrayItem> mItems {this};
 	QTimer maintainTimer;
+	// Fires a little after this window was last found below another of its
+	// class, and how many times that has led to asking for icons again.
+	QTimer askAgainTimer;
+	int timesAsked = 0;
 };
 
 ///! System tray

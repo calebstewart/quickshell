@@ -227,14 +227,23 @@ TrayHost::TrayHost() {
 	this->maintain();
 
 	QObject::connect(&this->maintainTimer, &QTimer::timeout, this, &TrayHost::maintain);
-	this->maintainTimer.start(1000);
+	this->maintainTimer.start(250);
 
-	// Asks every application to publish its icons again, as it would after the
-	// taskbar restarts. This is the only way to learn about existing icons.
-	auto taskbarCreated = RegisterWindowMessageW(L"TaskbarCreated");
-	SendNotifyMessageW(HWND_BROADCAST, taskbarCreated, 0, 0);
+	this->askAgainTimer.setSingleShot(true);
+	this->askAgainTimer.setInterval(1500);
+	QObject::connect(&this->askAgainTimer, &QTimer::timeout, this, &TrayHost::askForIcons);
+
+	this->askForIcons();
 
 	qCInfo(logTray) << "Notification area window created, forwarding to" << this->previous;
+}
+
+// Asks every application to publish its icons again, as it would after the
+// taskbar restarts. This is the only way to learn about existing icons. An
+// icon already known is updated in place, so asking twice is harmless.
+void TrayHost::askForIcons() {
+	auto taskbarCreated = RegisterWindowMessageW(L"TaskbarCreated");
+	SendNotifyMessageW(HWND_BROADCAST, taskbarCreated, 0, 0);
 }
 
 TrayHost::~TrayHost() {
@@ -508,6 +517,18 @@ void TrayHost::maintain() {
 		if (first != nullptr && first != this->previous) this->previous = first;
 
 		SetWindowPos(this->hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+
+		// Whatever was published while the taskbar was in front went to it
+		// and not to us. That happens most at startup, when a shell's own
+		// windows appearing make the taskbar raise itself, just as the
+		// applications answer the first request. So ask again once things
+		// have been quiet for a moment. Bounded, in case asking is itself
+		// what makes the taskbar come forward.
+		if (this->timesAsked < 5) {
+			this->timesAsked++;
+			this->askAgainTimer.start();
+			qCDebug(logTray) << "Lost first place to" << first << "and will ask for icons again";
+		}
 	}
 
 	// An application that exits without removing its icon leaves it behind.
