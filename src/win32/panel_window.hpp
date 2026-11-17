@@ -121,6 +121,8 @@ private:
 	WinPanelEventFilter eventFilter;
 
 	bool appBarRegistered = false;
+	// The window that had the keyboard before this panel took it, as a HWND.
+	quintptr previousForeground = 0;
 	bool hasInputMask = false;
 	QRegion inputMask;
 	QTimer cursorTimer;

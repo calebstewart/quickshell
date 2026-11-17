@@ -42,6 +42,30 @@ bool anyMouseButtonDown() {
 	    || (GetAsyncKeyState(VK_MBUTTON) & 0x8000) != 0;
 }
 
+// Makes a window the foreground window from a process that is not in the
+// foreground, which Windows refuses to a plain SetForegroundWindow. Sharing
+// input state with the foreground window's thread makes the request count as
+// coming from it. That is not possible when that window belongs to a process
+// with more privileges; an input event of our own, here a mouse move of
+// nothing, is the other thing that earns the right.
+void takeForeground(HWND hwnd) {
+	auto* foreground = GetForegroundWindow();
+	auto self = GetCurrentThreadId();
+	auto other = foreground == nullptr ? 0 : GetWindowThreadProcessId(foreground, nullptr);
+
+	auto attached = other != 0 && other != self && AttachThreadInput(self, other, TRUE) != 0;
+	SetForegroundWindow(hwnd);
+	if (attached) AttachThreadInput(self, other, FALSE);
+
+	if (GetForegroundWindow() == hwnd) return;
+
+	INPUT input = {};
+	input.type = INPUT_MOUSE;
+	input.mi.dwFlags = MOUSEEVENTF_MOVE;
+	SendInput(1, &input, sizeof(input));
+	SetForegroundWindow(hwnd);
+}
+
 } // namespace
 
 class WinPanelStack {
@@ -414,6 +438,36 @@ void WinPanelWindow::updateFocusable() {
 	this->window->setFlag(Qt::WindowDoesNotAcceptFocus, !focusable);
 	// Read by the windows platform plugin when the window is shown.
 	this->window->setProperty("_q_showWithoutActivating", !focusable);
+
+	// A panel is given focus so that something in it can be typed into, most
+	// often because a key opened it, in which case nothing else would move the
+	// keyboard there: a layer shell compositor does that itself. Give the
+	// keyboard back to whoever had it once the panel stops wanting it.
+	//
+	// Deferred, as changing the flag above reapplies the window's styles.
+	if (focusable) {
+		QTimer::singleShot(0, this, [this] {
+			if (!this->bFocusable.value()) return;
+			auto* hwnd = nativeHandle(this->window);
+			if (hwnd == nullptr || !this->window->isVisible()) return;
+
+			auto* foreground = GetForegroundWindow();
+			if (foreground != hwnd) {
+				this->previousForeground = reinterpret_cast<quintptr>(foreground); // NOLINT
+				takeForeground(hwnd);
+			}
+
+			this->window->requestActivate();
+		});
+	} else {
+		auto* previous = reinterpret_cast<HWND>(this->previousForeground); // NOLINT
+		this->previousForeground = 0;
+
+		auto* hwnd = nativeHandle(this->window);
+		if (previous != nullptr && hwnd != nullptr && GetForegroundWindow() == hwnd
+		    && IsWindow(previous))
+			SetForegroundWindow(previous);
+	}
 }
 
 void WinPanelWindow::onPolished() {
