@@ -7,7 +7,8 @@ lint:
 	find src -type f -name "*.cpp" -print0 | parallel -j$(nproc) -q0 --no-notice --will-cite --tty --bar clang-tidy --load={{ env_var("TIDYFOX") }}
 
 lint-ci:
-	find src -type f -name "*.cpp" -print0 | parallel -j$(nproc) -q0 --no-notice --will-cite --tty clang-tidy --load={{ env_var("TIDYFOX") }}
+	# The Windows sources need headers that do not exist where this runs.
+	find src -type f -name "*.cpp" -not -path "src/win32/*" -not -name win32.cpp -print0 | parallel -j$(nproc) -q0 --no-notice --will-cite --tty clang-tidy --load={{ env_var("TIDYFOX") }}
 
 lint-changed:
 	git diff --name-only HEAD | grep "^.*\.cpp\$" |  parallel -j$(nproc) --no-notice --will-cite --tty --bar clang-tidy --load={{ env_var("TIDYFOX") }}

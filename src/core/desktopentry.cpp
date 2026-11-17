@@ -15,7 +15,6 @@
 #include <qpair.h>
 #include <qproperty.h>
 #include <qscopeguard.h>
-#include <qstandardpaths.h>
 #include <qtenvironmentvariables.h>
 #include <qthreadpool.h>
 #include <qtmetamacros.h>
@@ -26,6 +25,10 @@
 #include "logcat.hpp"
 #include "model.hpp"
 #include "qmlglobal.hpp"
+
+#ifdef Q_OS_WIN
+#include <qstandardpaths.h>
+#endif
 
 namespace {
 QS_LOGGING_CATEGORY(logDesktopEntry, "quickshell.desktopentry", QtWarningMsg);

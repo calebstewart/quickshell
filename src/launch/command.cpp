@@ -20,7 +20,6 @@
 #include <qlogging.h>
 #include <qloggingcategory.h>
 #include <qnamespace.h>
-#include <qprocess.h>
 #include <qstandardpaths.h>
 #include <qtenvironmentvariables.h>
 #include <qtversion.h>
@@ -33,6 +32,10 @@
 #include "../io/ipccomm.hpp"
 #include "../ipc/ipc.hpp"
 #include "launch_p.hpp"
+
+#ifdef Q_OS_WIN
+#include <qprocess.h>
+#endif
 
 namespace qs::launch {
 

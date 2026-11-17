@@ -15,6 +15,7 @@
 #include <qqmldebug.h>
 #include <qquickwindow.h>
 #include <qstring.h>
+#include <qstringlist.h>
 #include <qtenvironmentvariables.h>
 #include <qtextstream.h>
 #include <unistd.h>

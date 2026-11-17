@@ -1,15 +1,15 @@
 #include "iconimageprovider.hpp"
 #include <algorithm>
 
-#include <qabstractfileiconprovider.h>
 #include <qcolor.h>
-#include <qfileinfo.h>
 #include <qicon.h>
-#include <qurl.h>
 
 #ifdef Q_OS_WIN
+#include <qabstractfileiconprovider.h>
 #include <qdir.h>
+#include <qfileinfo.h>
 #include <qimage.h>
+#include <qurl.h>
 #include <windows.h>
 // windows.h must come first
 #include <commctrl.h>
