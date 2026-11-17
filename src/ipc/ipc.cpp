@@ -67,8 +67,10 @@ void IpcServerConnection::onDisconnected() {
 }
 
 void IpcServerConnection::onReadyRead() {
-	this->stream.startTransaction();
-
+	// A command can arrive in several pieces. A single transaction is rolled
+	// back when the command is incomplete, so the next readyRead starts over
+	// with everything received so far. Nesting a second transaction here left
+	// the outer one open with a failed status, and every later read failed.
 	this->stream.startTransaction();
 	IpcCommand command;
 	this->stream >> command;
@@ -85,8 +87,6 @@ void IpcServerConnection::onReadyRead() {
 	    },
 	    command
 	);
-
-	if (!this->stream.commitTransaction()) return;
 
 	// async connections reparent
 	if (dynamic_cast<IpcServer*>(this->parent()) != nullptr) {
