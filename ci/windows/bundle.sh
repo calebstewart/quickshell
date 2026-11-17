@@ -48,13 +48,15 @@ checkout() {
 	fi
 	rm -rf "$dir"
 	git init -q "$dir"
-	git -C "$dir" -c core.autocrlf=false fetch -q --depth 1 "$repo" "$rev"
+	# Without the user's configuration: a rewrite of GitHub URLs to SSH there
+	# would make a public fetch need a key.
+	GIT_CONFIG_GLOBAL=/dev/null git -C "$dir" -c core.autocrlf=false fetch -q --depth 1 "$repo" "$rev"
 	git -C "$dir" -c core.autocrlf=false checkout -q FETCH_HEAD
 }
 
 echo "== Quickshell"
 cmake -S "$src" -B "$work/quickshell" -G Ninja \
-	-DCMAKE_BUILD_TYPE=Release \
+	-DCMAKE_BUILD_TYPE=RelWithDebInfo \
 	-DDISTRIBUTOR="calebstewart/quickshell (Windows bundle)" \
 	-DWAYLAND=OFF -DX11=OFF -DI3=OFF -DCRASH_HANDLER=OFF -DUSE_JEMALLOC=OFF \
 	-DBLUETOOTH=OFF -DNETWORK=OFF \
@@ -70,7 +72,7 @@ echo "== Caelestia plugin ($CAELESTIA_REV)"
 checkout "$CAELESTIA_REPO" "$CAELESTIA_REV" "$work/caelestia"
 git -C "$work/caelestia" apply "$here/caelestia-plugin.patch"
 cmake -S "$work/caelestia" -B "$work/caelestia-build" -G Ninja \
-	-DCMAKE_BUILD_TYPE=Release \
+	-DCMAKE_BUILD_TYPE=RelWithDebInfo \
 	-DCMAKE_INSTALL_PREFIX="$prefix" \
 	-DENABLE_MODULES=plugin \
 	-DVERSION="$CAELESTIA_VERSION" \
@@ -82,7 +84,7 @@ cmake --install "$work/caelestia-build"
 echo "== M3Shapes ($M3SHAPES_REV)"
 checkout "$M3SHAPES_REPO" "$M3SHAPES_REV" "$work/m3shapes"
 cmake -S "$work/m3shapes" -B "$work/m3shapes-build" -G Ninja \
-	-DCMAKE_BUILD_TYPE=Release \
+	-DCMAKE_BUILD_TYPE=RelWithDebInfo \
 	-DCMAKE_INSTALL_PREFIX="$prefix" \
 	-DINSTALL_QMLDIR=qml
 cmake --build "$work/m3shapes-build"

@@ -1,0 +1,63 @@
+name: Windows bundle
+on:
+  push:
+    branches: [windows]
+    tags: ["windows-*"]
+  workflow_dispatch:
+
+jobs:
+  bundle:
+    name: Bundle
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      # The tree is LF. Without this the checkout converts it, and the patch
+      # the bundle script applies no longer matches.
+      - name: Keep line endings
+        shell: bash
+        run: git config --global core.autocrlf false
+
+      - uses: actions/checkout@v4
+
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: git zip
+          pacboy: >-
+            gcc:p cmake:p ninja:p pkgconf:p cli11:p cppwinrt:p
+            qt6-base:p qt6-declarative:p qt6-shadertools:p qt6-svg:p
+            qt6-imageformats:p qt6-multimedia:p
+            libqalculate:p aubio:p cava:p
+
+      - name: Build and bundle
+        run: |
+          git config --global --add safe.directory '*'
+          temp=$(cygpath "$RUNNER_TEMP")
+          ci/windows/bundle.sh "$temp/work" "$temp/quickshell-windows"
+          cd "$temp"
+          zip -qr quickshell-windows-x86_64.zip quickshell-windows
+          cat quickshell-windows/manifest.json
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: quickshell-windows-x86_64
+          path: ${{ runner.temp }}/quickshell-windows-x86_64.zip
+          # Already a zip; the artifact wraps it in another either way.
+          compression-level: 0
+
+      - name: Release
+        if: startsWith(github.ref, 'refs/tags/windows-')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          gh release create "$env:GITHUB_REF_NAME"
+          "$env:RUNNER_TEMP\quickshell-windows-x86_64.zip"
+          --repo "$env:GITHUB_REPOSITORY"
+          --title "$env:GITHUB_REF_NAME"
+          --notes "Quickshell for Windows with the caelestia plugin and M3Shapes. See manifest.json in the archive for the revisions."

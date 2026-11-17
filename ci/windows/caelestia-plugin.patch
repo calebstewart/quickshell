@@ -1,0 +1,455 @@
+From b43809179f343e8cc277b47dbf6cf13887a61c23 Mon Sep 17 00:00:00 2001
+From: Caleb Stewart <caleb.stewart94@gmail.com>
+Date: Mon, 16 Nov 2026 22:51:11 -0500
+Subject: [PATCH] build(plugin): build on Windows
+
+Make the plugin configure, compile and link with MinGW and Qt 6 on
+Windows. Other platforms are unchanged.
+
+- PipeWire, cava and lm-sensors are not required on Windows. The audio
+  collector captures nothing, the visualiser stays flat and temperatures
+  read as unknown.
+- The sysfs block device lookup in the storage service returns nothing.
+- Shaders also emit HLSL, as Qt Quick renders through Direct3D.
+- Include prefixes use directory junctions, which unlike symlinks need
+  neither elevation nor developer mode.
+- Every module is a static library linked into one caelestia-all DLL,
+  with a small plugin DLL per module. With one DLL per module a signal's
+  address differs between the DLL defining it and a DLL connecting to
+  it, so connections between modules silently failed.
+
+Co-Authored-By: Claude Fable 5.2 <noreply@anthropic.com>
+---
+ plugin/CMakeLists.txt                         | 41 ++++++++++++++++---
+ plugin/cmake/qml-module.cmake                 | 39 +++++++++++++++---
+ plugin/src/Caelestia/Blobs/CMakeLists.txt     |  2 +-
+ .../src/Caelestia/Components/CMakeLists.txt   |  2 +-
+ plugin/src/Caelestia/Services/CMakeLists.txt  | 14 +++++--
+ .../src/Caelestia/Services/audiocollector.cpp | 11 +++++
+ .../src/Caelestia/Services/audiocollector.hpp |  4 ++
+ .../src/Caelestia/Services/cavaprovider.cpp   | 13 ++++++
+ .../src/Caelestia/Services/cavaprovider.hpp   |  2 +
+ .../src/Caelestia/Services/sensorslib_win.cpp | 17 ++++++++
+ plugin/src/Caelestia/Services/storage.cpp     |  7 ++++
+ plugin/src/Caelestia/Shaders/CMakeLists.txt   |  2 +-
+ 12 files changed, 137 insertions(+), 17 deletions(-)
+ create mode 100644 plugin/src/Caelestia/Services/sensorslib_win.cpp
+
+diff --git a/plugin/CMakeLists.txt b/plugin/CMakeLists.txt
+index 6002d8b8..68196303 100644
+--- a/plugin/CMakeLists.txt
++++ b/plugin/CMakeLists.txt
+@@ -1,17 +1,29 @@
+ find_package(Qt6 REQUIRED COMPONENTS ShaderTools Core Qml Gui Quick QuickControls2 Concurrent Sql Network DBus Multimedia)
+ find_package(PkgConfig REQUIRED)
+ pkg_check_modules(Qalculate IMPORTED_TARGET libqalculate REQUIRED)
+-pkg_check_modules(Pipewire IMPORTED_TARGET libpipewire-0.3 REQUIRED)
+ pkg_check_modules(Aubio IMPORTED_TARGET aubio REQUIRED)
+-pkg_check_modules(Cava IMPORTED_TARGET libcava QUIET)
+-if(NOT Cava_FOUND)
+-    pkg_check_modules(Cava IMPORTED_TARGET cava REQUIRED)
++
++# PipeWire, cava and lm-sensors do not exist on Windows. The services built on
++# them compile to stand-ins there, see src/Caelestia/Services.
++if(NOT WIN32)
++    pkg_check_modules(Pipewire IMPORTED_TARGET libpipewire-0.3 REQUIRED)
++    pkg_check_modules(Cava IMPORTED_TARGET libcava QUIET)
++    if(NOT Cava_FOUND)
++        pkg_check_modules(Cava IMPORTED_TARGET cava REQUIRED)
++    endif()
++    include(cmake/sensorslib.cmake)
+ endif()
+-include(cmake/sensorslib.cmake)
+ 
+ set(QT_QML_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/qml")
+ qt_standard_project_setup(REQUIRES 6.9)
+ 
++# Qt Quick renders through Direct3D on Windows, which needs the HLSL variants.
++if(WIN32)
++    set(CAELESTIA_SHADER_SKIP NOMSL)
++else()
++    set(CAELESTIA_SHADER_SKIP NOHLSL NOMSL)
++endif()
++
+ include(cmake/pch.cmake)
+ include(cmake/qml-module.cmake)
+ 
+@@ -21,3 +33,22 @@ target_include_directories(caelestia-util INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}
+ 
+ add_subdirectory(3rdparty/rgbcx)
+ add_subdirectory(src/Caelestia)
++
++# The one DLL holding every module on Windows. See cmake/qml-module.cmake.
++if(WIN32)
++    get_property(module_targets GLOBAL PROPERTY CAELESTIA_MODULE_TARGETS)
++
++    file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/caelestia_all.cpp" "// Intentionally empty.\n")
++    add_library(caelestia-all SHARED "${CMAKE_CURRENT_BINARY_DIR}/caelestia_all.cpp")
++
++    # Whole archive, as nothing in the DLL itself refers to the modules and
++    # their type registrations run from static initialisers.
++    foreach(module_target IN LISTS module_targets)
++        target_link_libraries(caelestia-all PRIVATE "$<LINK_LIBRARY:WHOLE_ARCHIVE,${module_target}>")
++    endforeach()
++
++    # Nothing is marked for export, and the plugins need the registration functions.
++    target_link_options(caelestia-all PRIVATE -Wl,--export-all-symbols)
++
++    install(TARGETS caelestia-all RUNTIME DESTINATION "${INSTALL_QMLDIR}/Caelestia/lib")
++endif()
+diff --git a/plugin/cmake/qml-module.cmake b/plugin/cmake/qml-module.cmake
+index 7dde2a31..1658f156 100644
+--- a/plugin/cmake/qml-module.cmake
++++ b/plugin/cmake/qml-module.cmake
+@@ -5,7 +5,19 @@ function(qml_module arg_TARGET)
+ 
+     set_source_files_properties(${arg_QML_SINGLETONS} PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
+ 
++    # On Windows every module is a static library, and all of them are linked
++    # into the single caelestia-all DLL (see plugin/CMakeLists.txt). With one
++    # DLL per module, a signal's address differs between the DLL that defines
++    # it and a DLL that connects to it, so those connections silently fail.
++    # Each module still gets its own small plugin DLL, which only pulls in
++    # caelestia-all.
++    set(module_kind)
++    if(WIN32)
++        set(module_kind STATIC PLUGIN_TARGET ${arg_TARGET}plugin NO_CREATE_PLUGIN_TARGET)
++    endif()
++
+     qt_add_qml_module(${arg_TARGET}
++        ${module_kind}
+         URI ${arg_URI}
+         SOURCES ${arg_SOURCES}
+         QML_FILES ${arg_QML_FILES} ${arg_QML_SINGLETONS}
+@@ -16,6 +28,12 @@ function(qml_module arg_TARGET)
+         DEFAULT_IMPORTS ${arg_DEFAULT_IMPORTS}
+     )
+ 
++    if(WIN32)
++        qt_add_qml_plugin(${arg_TARGET}plugin URI ${arg_URI} SHARED)
++        target_link_libraries(${arg_TARGET}plugin PRIVATE caelestia-all)
++        set_property(GLOBAL APPEND PROPERTY CAELESTIA_MODULE_TARGETS ${arg_TARGET})
++    endif()
++
+     qt_query_qml_module(${arg_TARGET}
+         URI module_uri
+         PLUGIN_TARGET module_plugin_target
+@@ -34,10 +52,12 @@ function(qml_module arg_TARGET)
+     set(backing_lib_dir "${INSTALL_QMLDIR}/${top_level}/lib")
+     set(module_dir "${INSTALL_QMLDIR}/${module_target_path}")
+ 
+-    install(TARGETS ${arg_TARGET}
+-        LIBRARY DESTINATION "${backing_lib_dir}"
+-        RUNTIME DESTINATION "${backing_lib_dir}"
+-    )
++    if(NOT WIN32)
++        install(TARGETS ${arg_TARGET}
++            LIBRARY DESTINATION "${backing_lib_dir}"
++            RUNTIME DESTINATION "${backing_lib_dir}"
++        )
++    endif()
+     install(TARGETS "${module_plugin_target}"
+         LIBRARY DESTINATION "${module_dir}"
+         RUNTIME DESTINATION "${module_dir}"
+@@ -51,7 +71,16 @@ function(qml_module arg_TARGET)
+     if(arg_INCLUDE_PREFIX)
+         set(include_dir "${CMAKE_CURRENT_BINARY_DIR}/include")
+         file(MAKE_DIRECTORY "${include_dir}")
+-        file(CREATE_LINK "${CMAKE_CURRENT_SOURCE_DIR}" "${include_dir}/${arg_INCLUDE_PREFIX}" SYMBOLIC)
++        if(WIN32)
++            # Symlinks need elevation or developer mode on Windows, junctions do not.
++            if(NOT EXISTS "${include_dir}/${arg_INCLUDE_PREFIX}")
++                file(TO_NATIVE_PATH "${include_dir}/${arg_INCLUDE_PREFIX}" link_native)
++                file(TO_NATIVE_PATH "${CMAKE_CURRENT_SOURCE_DIR}" target_native)
++                execute_process(COMMAND cmd /c mklink /J "${link_native}" "${target_native}" OUTPUT_QUIET COMMAND_ERROR_IS_FATAL ANY)
++            endif()
++        else()
++            file(CREATE_LINK "${CMAKE_CURRENT_SOURCE_DIR}" "${include_dir}/${arg_INCLUDE_PREFIX}" SYMBOLIC)
++        endif()
+         target_include_directories(${arg_TARGET} PUBLIC "${include_dir}")
+     endif()
+ 
+diff --git a/plugin/src/Caelestia/Blobs/CMakeLists.txt b/plugin/src/Caelestia/Blobs/CMakeLists.txt
+index 9506f7f4..bd3b7ade 100644
+--- a/plugin/src/Caelestia/Blobs/CMakeLists.txt
++++ b/plugin/src/Caelestia/Blobs/CMakeLists.txt
+@@ -11,7 +11,7 @@ qml_module(caelestia-blobs
+ )
+ 
+ qt_add_shaders(caelestia-blobs "blob_shaders"
+-    BATCHABLE OPTIMIZED NOHLSL NOMSL
++    BATCHABLE OPTIMIZED ${CAELESTIA_SHADER_SKIP}
+     GLSL "300es,330"
+     PREFIX "/"
+     FILES
+diff --git a/plugin/src/Caelestia/Components/CMakeLists.txt b/plugin/src/Caelestia/Components/CMakeLists.txt
+index 40e81cde..456bc8f0 100644
+--- a/plugin/src/Caelestia/Components/CMakeLists.txt
++++ b/plugin/src/Caelestia/Components/CMakeLists.txt
+@@ -19,7 +19,7 @@ qml_module(caelestia-components
+ )
+ 
+ qt_add_shaders(caelestia-components "components_shaders"
+-    BATCHABLE OPTIMIZED NOHLSL NOMSL
++    BATCHABLE OPTIMIZED ${CAELESTIA_SHADER_SKIP}
+     GLSL "300es,330"
+     PREFIX "/"
+     FILES
+diff --git a/plugin/src/Caelestia/Services/CMakeLists.txt b/plugin/src/Caelestia/Services/CMakeLists.txt
+index 8401cbae..2f9abe95 100644
+--- a/plugin/src/Caelestia/Services/CMakeLists.txt
++++ b/plugin/src/Caelestia/Services/CMakeLists.txt
+@@ -1,3 +1,11 @@
++if(WIN32)
++    set(sensors_source sensorslib_win.cpp)
++    set(platform_libraries)
++else()
++    set(sensors_source sensorslib.cpp)
++    set(platform_libraries PkgConfig::Pipewire PkgConfig::Cava Sensors::Sensors)
++endif()
++
+ qml_module(caelestia-services
+     URI Caelestia.Services
+     SOURCES
+@@ -8,7 +16,7 @@ qml_module(caelestia-services
+         audioprovider.cpp
+         cavaprovider.cpp
+         tickingservice.cpp
+-        sensorslib.cpp
++        ${sensors_source}
+         cpu.cpp
+         gpu.cpp
+         memory.cpp
+@@ -24,10 +32,8 @@ qml_module(caelestia-services
+         Qt::Concurrent
+         Qt::DBus
+         Qt::Network
+-        PkgConfig::Pipewire
+         PkgConfig::Aubio
+-        PkgConfig::Cava
+-        Sensors::Sensors
++        ${platform_libraries}
+         caelestia-util
+         caelestia-core
+         caelestia-config
+diff --git a/plugin/src/Caelestia/Services/audiocollector.cpp b/plugin/src/Caelestia/Services/audiocollector.cpp
+index e7740961..49ef21a1 100644
+--- a/plugin/src/Caelestia/Services/audiocollector.cpp
++++ b/plugin/src/Caelestia/Services/audiocollector.cpp
+@@ -2,7 +2,9 @@
+ 
+ #include <qloggingcategory.h>
+ 
++#ifndef Q_OS_WIN
+ #include <pipewire/pipewire.h>
++#endif
+ 
+ #include <algorithm>
+ #include <mutex>
+@@ -15,12 +17,15 @@
+ 
+ namespace {
+ 
++#ifndef Q_OS_WIN
+ Q_LOGGING_CATEGORY(lcAcWorker, "caelestia.services.ac.worker", QtInfoMsg)
++#endif
+ 
+ } // namespace
+ 
+ namespace caelestia::shell::services {
+ 
++#ifndef Q_OS_WIN
+ PipeWireWorker::PipeWireWorker(std::stop_token token, AudioCollector* collector)
+     : m_loop(nullptr)
+     , m_stream(nullptr)
+@@ -164,6 +169,8 @@ void PipeWireWorker::processStream() {
+     pw_stream_queue_buffer(m_stream, buffer);
+ }
+ 
++#endif
++
+ AudioCollector& AudioCollector::instance() {
+     static AudioCollector s_instance;
+     return s_instance;
+@@ -239,9 +246,13 @@ void AudioCollector::start() {
+ 
+     clearBuffer();
+ 
++#ifndef Q_OS_WIN
+     m_thread = std::jthread([this](std::stop_token token) {
+         const PipeWireWorker worker(std::move(token), this);
+     });
++#else
++    // There is no capture backend on Windows yet, so the buffer stays silent.
++#endif
+ }
+ 
+ void AudioCollector::stop() {
+diff --git a/plugin/src/Caelestia/Services/audiocollector.hpp b/plugin/src/Caelestia/Services/audiocollector.hpp
+index 10c69678..9c01deff 100644
+--- a/plugin/src/Caelestia/Services/audiocollector.hpp
++++ b/plugin/src/Caelestia/Services/audiocollector.hpp
+@@ -3,8 +3,10 @@
+ #include <qmutex.h>
+ #include <qqmlintegration.h>
+ 
++#ifndef Q_OS_WIN
+ #include <pipewire/pipewire.h>
+ #include <spa/param/audio/format-utils.h>
++#endif
+ 
+ #include <atomic>
+ #include <stop_token>
+@@ -44,6 +46,7 @@ private:
+ 
+ class AudioCollector;
+ 
++#ifndef Q_OS_WIN
+ class PipeWireWorker {
+ public:
+     explicit PipeWireWorker(std::stop_token token, AudioCollector* collector);
+@@ -63,6 +66,7 @@ private:
+     void streamStateChanged(pw_stream_state state);
+     void processStream();
+ };
++#endif
+ 
+ class AudioCollector : public Service {
+     Q_OBJECT
+diff --git a/plugin/src/Caelestia/Services/cavaprovider.cpp b/plugin/src/Caelestia/Services/cavaprovider.cpp
+index dd98797b..de7073e7 100644
+--- a/plugin/src/Caelestia/Services/cavaprovider.cpp
++++ b/plugin/src/Caelestia/Services/cavaprovider.cpp
+@@ -2,7 +2,9 @@
+ 
+ #include <qloggingcategory.h>
+ 
++#ifndef Q_OS_WIN
+ #include <cava/cavacore.h>
++#endif
+ 
+ #include <cstddef>
+ 
+@@ -37,8 +39,12 @@ void CavaProcessor::process() {
+ 
+     const int count = static_cast<int>(AudioCollector::instance().readChunk(m_in));
+ 
++#ifndef Q_OS_WIN
+     // Process in data via cava
+     cava_execute(m_in, count, m_out, m_plan);
++#else
++    Q_UNUSED(count);
++#endif
+ 
+     // Apply monstercat filter
+     QVector<double> values(m_bars);
+@@ -84,7 +90,9 @@ void CavaProcessor::reload() {
+ 
+ void CavaProcessor::cleanup() {
+     if (m_plan) {
++#ifndef Q_OS_WIN
+         cava_destroy(m_plan);
++#endif
+         m_plan = nullptr;
+     }
+ 
+@@ -99,8 +107,13 @@ void CavaProcessor::initCava() {
+         return;
+     }
+ 
++#ifndef Q_OS_WIN
+     m_plan = cava_init(m_bars, ac::k_sampleRate, 1, 1, 0.85, 50, 10000);
+     m_out = new double[static_cast<size_t>(m_bars)];
++#else
++    // libcava is not available on Windows. Without a plan process() does nothing
++    // and the visualiser stays flat.
++#endif
+ }
+ 
+ CavaProvider::CavaProvider(QObject* parent)
+diff --git a/plugin/src/Caelestia/Services/cavaprovider.hpp b/plugin/src/Caelestia/Services/cavaprovider.hpp
+index cb7a441c..9db86d52 100644
+--- a/plugin/src/Caelestia/Services/cavaprovider.hpp
++++ b/plugin/src/Caelestia/Services/cavaprovider.hpp
+@@ -2,7 +2,9 @@
+ 
+ #include <qqmlintegration.h>
+ 
++#ifndef Q_OS_WIN
+ #include <cava/cavacore.h>
++#endif
+ 
+ #include "audioprovider.hpp"
+ 
+diff --git a/plugin/src/Caelestia/Services/sensorslib_win.cpp b/plugin/src/Caelestia/Services/sensorslib_win.cpp
+new file mode 100644
+index 00000000..567d6658
+--- /dev/null
++++ b/plugin/src/Caelestia/Services/sensorslib_win.cpp
+@@ -0,0 +1,17 @@
++#include "sensorslib.hpp"
++
++// lm-sensors does not exist on Windows. Temperatures are reported as unknown.
++
++namespace caelestia::shell::services::sensorslib {
++
++void ensureInit() {}
++
++std::optional<double> cpuPackageTemp() {
++    return std::nullopt;
++}
++
++std::optional<double> gpuPciAverageTemp() {
++    return std::nullopt;
++}
++
++} // namespace caelestia::shell::services::sensorslib
+diff --git a/plugin/src/Caelestia/Services/storage.cpp b/plugin/src/Caelestia/Services/storage.cpp
+index c94cb6f2..ddf53c49 100644
+--- a/plugin/src/Caelestia/Services/storage.cpp
++++ b/plugin/src/Caelestia/Services/storage.cpp
+@@ -8,7 +8,9 @@
+ #include <qtconcurrentrun.h>
+ 
+ #include <sys/stat.h>
++#ifndef Q_OS_WIN
+ #include <sys/sysmacros.h>
++#endif
+ 
+ #include <algorithm>
+ #include <cmath>
+@@ -194,6 +196,10 @@ QStringList Storage::resolveToPhysicalDisks(const QString& devicePath) {
+     if (devicePath.isEmpty() || !devicePath.startsWith(u'/')) {
+         return {};
+     }
++#ifdef Q_OS_WIN
++    // Block devices are resolved through sysfs, which Windows does not have.
++    return {};
++#else
+     struct stat st{};
+     if (::stat(devicePath.toLocal8Bit().constData(), &st) != 0) {
+         return {};
+@@ -202,6 +208,7 @@ QStringList Storage::resolveToPhysicalDisks(const QString& devicePath) {
+         return {};
+     }
+     return resolveByDevt(major(st.st_rdev), minor(st.st_rdev));
++#endif
+ }
+ 
+ QHash<QByteArray, Storage::DeviceEntry> Storage::collectDevices() {
+diff --git a/plugin/src/Caelestia/Shaders/CMakeLists.txt b/plugin/src/Caelestia/Shaders/CMakeLists.txt
+index fb7ad371..c627f5e2 100644
+--- a/plugin/src/Caelestia/Shaders/CMakeLists.txt
++++ b/plugin/src/Caelestia/Shaders/CMakeLists.txt
+@@ -8,7 +8,7 @@ qml_module(caelestia-shaders
+ )
+ 
+ qt_add_shaders(caelestia-shaders "shaders"
+-    BATCHABLE OPTIMIZED NOHLSL NOMSL
++    BATCHABLE OPTIMIZED ${CAELESTIA_SHADER_SKIP}
+     GLSL "300es,330"
+     PREFIX "/shaders"
+     FILES
+-- 
+2.55.0.windows.3
+
