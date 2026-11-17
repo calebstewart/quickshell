@@ -20,6 +20,13 @@
 #include "../crash/main.hpp"
 #endif
 
+#ifdef Q_OS_WIN
+#include <cstdlib>
+
+#include <qdir.h>
+#include <qstring.h>
+#endif
+
 namespace qs::launch {
 
 namespace {
@@ -118,6 +125,16 @@ void exitDaemon(int code) {
 
 int main(int argc, char** argv) {
 	QCoreApplication::setApplicationName("quickshell");
+
+#ifdef Q_OS_WIN
+	// Configurations written for Linux read HOME, which Windows does not set.
+	// With forward slashes, as such a configuration joins paths onto it with
+	// them. Set through the C runtime, which is where Qt reads variables from.
+	if (!qEnvironmentVariableIsSet("HOME")) {
+		auto home = QDir::fromNativeSeparators(qEnvironmentVariable("USERPROFILE"));
+		if (!home.isEmpty()) _wputenv_s(L"HOME", reinterpret_cast<const wchar_t*>(home.utf16()));
+	}
+#endif
 
 #if CRASH_HANDLER
 	qsCheckCrash(argc, argv);
