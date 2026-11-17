@@ -25,6 +25,18 @@ QUrl QsUrlInterceptor::intercept(
 ) {
 	auto url = originalUrl;
 
+#ifdef Q_OS_WIN
+	// A bare Windows path such as "C:/dir/file" parses as a URL whose scheme is
+	// the drive letter. Configurations pass plain paths (Quickshell.shellPath()
+	// returns one) where a URL is expected, which works for "/dir/file" on other
+	// platforms through the "qs:/" handling below.
+	if (url.scheme().length() == 1 && url.scheme().at(0).isLetter()) {
+		auto fileUrl = QUrl::fromLocalFile(url.scheme() % ':' % url.path());
+		qCDebug(logQsIntercept) << "Rewrote drive letter url" << url << "to" << fileUrl;
+		return fileUrl;
+	}
+#endif
+
 	if (url.scheme() == "root") {
 		url.setScheme("qs");
 
@@ -57,10 +69,16 @@ QUrl QsUrlInterceptor::intercept(
 			// will not be able to use singletons.
 			if (path.endsWith(".qml")) return url;
 
+#ifdef Q_OS_WIN
+			// A drive letter path has no leading slash, so setPath() would produce
+			// "file:C:/..." rather than "file:///C:/...".
+			auto newUrl = QUrl::fromLocalFile(path);
+#else
 			auto newUrl = url;
 			newUrl.setScheme("file");
 			// above check asserts path starts with /qs/
 			newUrl.setPath(path);
+#endif
 			qCDebug(logQsIntercept) << "Rewrote intercept" << url << "to" << newUrl;
 			return newUrl;
 		}
