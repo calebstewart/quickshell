@@ -17,15 +17,23 @@ qt_add_qml_module(quickshell-widgets
 		ClippingWrapperRectangleInternal.qml
 )
 
+# Qt Quick renders through Direct3D on Windows, which needs the HLSL variant.
+# PRECOMPILE is left out there, as it would need the fxc compiler.
+if (WIN32)
+	set(CLIPRECT_SHADER_OPTIONS NOMSL BATCHABLE OPTIMIZED QUIET)
+else()
+	set(CLIPRECT_SHADER_OPTIONS NOHLSL NOMSL BATCHABLE PRECOMPILE OPTIMIZED QUIET)
+endif()
+
 qt6_add_shaders(quickshell-widgets "widgets-cliprect"
-	NOHLSL NOMSL BATCHABLE PRECOMPILE OPTIMIZED QUIET
+	${CLIPRECT_SHADER_OPTIONS}
 	PREFIX "/Quickshell/Widgets"
 	FILES shaders/cliprect.frag
 	OUTPUTS shaders/cliprect.frag.qsb
 )
 
 qt6_add_shaders(quickshell-widgets "widgets-cliprect-ub"
-	NOHLSL NOMSL BATCHABLE PRECOMPILE OPTIMIZED QUIET
+	${CLIPRECT_SHADER_OPTIONS}
 	PREFIX "/Quickshell/Widgets"
 	FILES shaders/cliprect.frag
 	OUTPUTS shaders/cliprect-ub.frag.qsb
