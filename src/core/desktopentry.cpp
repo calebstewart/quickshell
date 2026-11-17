@@ -15,6 +15,7 @@
 #include <qpair.h>
 #include <qproperty.h>
 #include <qscopeguard.h>
+#include <qstandardpaths.h>
 #include <qtenvironmentvariables.h>
 #include <qthreadpool.h>
 #include <qtmetamacros.h>
@@ -383,6 +384,29 @@ void DesktopEntryScanner::scanDirectory(
 			this->scanDirectory(QDir(entry.absoluteFilePath()), subdirPrefix, entries);
 		} else if (entry.isFile()) {
 			auto path = entry.filePath();
+
+#ifdef Q_OS_WIN
+			// Applications are Start Menu shortcuts on Windows. A shortcut is
+			// opened through the shell, which resolves its target, arguments and
+			// working directory, and its icon is whatever the shell shows for it.
+			if (!path.endsWith(".lnk", Qt::CaseInsensitive)) continue;
+
+			auto shortcutName = entry.completeBaseName();
+
+			// Start Menu folders also hold links to uninstallers and documents.
+			if (shortcutName.startsWith("Uninstall", Qt::CaseInsensitive)) continue;
+
+			ParsedDesktopEntryData shortcut;
+			shortcut.id = idPrefix.isEmpty() ? shortcutName : idPrefix + '-' + shortcutName;
+			shortcut.name = shortcutName;
+			shortcut.icon = entry.absoluteFilePath();
+			shortcut.command = {"explorer.exe", QDir::toNativeSeparators(entry.absoluteFilePath())};
+			shortcut.execString = shortcut.command.join(' ');
+			if (!idPrefix.isEmpty()) shortcut.categories = {idPrefix};
+			entries.append(std::move(shortcut));
+			continue;
+#endif
+
 			if (!path.endsWith(".desktop")) {
 				qCDebug(logDesktopEntry) << "Skipping file" << path << "as it has no .desktop extension";
 				continue;
@@ -484,6 +508,18 @@ void DesktopEntryManager::handleFileChanges() {
 const QStringList& DesktopEntryManager::desktopPaths() {
 	static const auto paths = []() {
 		auto dataPaths = QStringList();
+
+#ifdef Q_OS_WIN
+		// The per user Start Menu, then the one shared by all users.
+		dataPaths = QStandardPaths::standardLocations(QStandardPaths::ApplicationsLocation);
+
+		auto programData = qEnvironmentVariable("ProgramData");
+		if (!programData.isEmpty()) {
+			dataPaths.append(QDir::fromNativeSeparators(programData) + "/Microsoft/Windows/Start Menu/Programs");
+		}
+
+		return dataPaths;
+#endif
 
 		auto dataHome = qEnvironmentVariable("XDG_DATA_HOME");
 		if (dataHome.isEmpty() && qEnvironmentVariableIsSet("HOME"))
