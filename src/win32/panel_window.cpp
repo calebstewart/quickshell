@@ -200,7 +200,14 @@ void WinPanelWindow::setScreen(QuickshellScreenInfo* screen) {
 }
 
 void WinPanelWindow::nativeInit() {
-	if (nativeHandle(this->window) == nullptr) return;
+	auto* hwnd = nativeHandle(this->window);
+	if (hwnd == nullptr) return;
+
+	// A window covering a whole monitor is taken for a fullscreen application:
+	// the shell reports the user as busy, holds back notification banners and
+	// keeps the taskbar behind it. This property tells the shell it is not one.
+	SetPropW(hwnd, L"NonRudeHWND", reinterpret_cast<HANDLE>(static_cast<INT_PTR>(1))); // NOLINT
+
 	this->updateDimensions();
 	this->updateInputTracking();
 }
