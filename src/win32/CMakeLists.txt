@@ -1,5 +1,6 @@
 qt_add_library(quickshell-win32 STATIC
 	panel_window.cpp
+	brightness.cpp
 )
 
 qt_add_qml_module(quickshell-win32
@@ -14,7 +15,7 @@ install_qml_module(quickshell-win32)
 
 add_library(quickshell-win32-init OBJECT init.cpp)
 
-target_link_libraries(quickshell-win32 PRIVATE Qt::Quick shell32 user32)
+target_link_libraries(quickshell-win32 PRIVATE Qt::Quick shell32 user32 dxva2)
 target_link_libraries(quickshell-win32-init PRIVATE Qt::Quick Qt::Qml)
 
 qs_module_pch(quickshell-win32 SET large)
