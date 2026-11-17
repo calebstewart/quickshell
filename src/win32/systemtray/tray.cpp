@@ -246,6 +246,28 @@ LRESULT CALLBACK TrayHost::windowProc(HWND hwnd, UINT message, WPARAM wParam, LP
 	auto* self = reinterpret_cast<TrayHost*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA)); // NOLINT
 
 	if (self != nullptr && message == WM_COPYDATA) return self->onCopyData(wParam, lParam);
+
+	// The shell and other programs ask the taskbar things through private
+	// messages, such as whether notifications should be shown right now.
+	// Those are passed on to the real one and its answer returned. Registered
+	// messages are left alone: they are broadcast, so it receives its own copy.
+	auto forwardable = (message >= WM_USER && message < 0xc000) || message == WM_COMMAND;
+
+	if (self != nullptr && forwardable && self->previous != nullptr && IsWindow(self->previous)) {
+		DWORD_PTR result = 0;
+		auto sent = SendMessageTimeoutW(
+		    self->previous,
+		    message,
+		    wParam,
+		    lParam,
+		    SMTO_ABORTIFHUNG,
+		    3000,
+		    &result
+		);
+
+		if (sent != 0) return static_cast<LRESULT>(result);
+	}
+
 	return DefWindowProcW(hwnd, message, wParam, lParam);
 }
 
