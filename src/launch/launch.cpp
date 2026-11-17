@@ -4,6 +4,8 @@
 #include <qdebug.h>
 #include <qdir.h>
 #include <qfile.h>
+#include <qfileinfo.h>
+#include <qfontdatabase.h>
 #include <qguiapplication.h>
 #include <qhash.h>
 #include <qlist.h>
@@ -35,6 +37,33 @@
 namespace qs::launch {
 
 namespace {
+
+// Loads fonts named by QS_FONT_PATH, a list of font files and directories of
+// font files, for this process only. Where fontconfig exists a per-user font
+// directory already does this; elsewhere the alternative is a system install.
+void loadExtraFonts() {
+	auto entries = qEnvironmentVariable("QS_FONT_PATH").split(QDir::listSeparator(), Qt::SkipEmptyParts);
+
+	for (const auto& entry: entries) {
+		QStringList files;
+		auto info = QFileInfo(entry);
+
+		if (info.isDir()) {
+			auto names = QDir(entry).entryList({"*.ttf", "*.otf", "*.ttc"}, QDir::Files);
+			for (const auto& name: names) files.append(QDir(entry).filePath(name));
+		} else {
+			files.append(entry);
+		}
+
+		for (const auto& file: files) {
+			if (QFontDatabase::addApplicationFont(file) == -1) {
+				qWarning() << "Could not load font from QS_FONT_PATH:" << file;
+			} else {
+				qInfo() << "Loaded font" << file;
+			}
+		}
+	}
+}
 
 template <typename T>
 QString base36Encode(T number) {
@@ -291,6 +320,8 @@ int launch(const LaunchArgs& args, char** argv) {
 
 	LogManager::initThreadLogging();
 	LogManager::initFs();
+
+	loadExtraFonts();
 
 	if (args.debugPort != -1) {
 		QQmlDebuggingEnabler::enableDebugging(true);
