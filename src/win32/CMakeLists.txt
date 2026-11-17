@@ -1,6 +1,7 @@
 qt_add_library(quickshell-win32 STATIC
 	panel_window.cpp
 	brightness.cpp
+	focus_watcher.cpp
 )
 
 qt_add_qml_module(quickshell-win32

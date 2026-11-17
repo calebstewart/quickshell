@@ -17,7 +17,7 @@ qt_add_qml_module(quickshell-win32-hyprland
 		ObjectList.qml
 )
 
-qs_add_module_deps_light(quickshell-win32-hyprland quickshell-core quickshell-io)
+qs_add_module_deps_light(quickshell-win32-hyprland quickshell-core quickshell-io quickshell-win32)
 
 install_qml_module(quickshell-win32-hyprland)
 
