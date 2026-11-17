@@ -279,7 +279,9 @@ public:
 	~NotificationServer() override;
 	Q_DISABLE_COPY_MOVE(NotificationServer);
 
-	[[nodiscard]] bool hasAccess() const { return NotificationHost::instance()->hasAccess(); } // NOLINT
+	[[nodiscard]] bool hasAccess() const {
+		return NotificationHost::instance()->hasAccess();
+	} // NOLINT
 	[[nodiscard]] ObjectModel<Notification>* trackedNotifications() const { // NOLINT
 		return NotificationHost::instance()->tracked();
 	}

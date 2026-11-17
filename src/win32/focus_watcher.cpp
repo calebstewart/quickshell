@@ -9,7 +9,8 @@ namespace qs::win32 {
 namespace {
 
 bool anyMouseButtonDown() {
-	return (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0 || (GetAsyncKeyState(VK_RBUTTON) & 0x8000) != 0
+	return (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0
+	    || (GetAsyncKeyState(VK_RBUTTON) & 0x8000) != 0
 	    || (GetAsyncKeyState(VK_MBUTTON) & 0x8000) != 0;
 }
 

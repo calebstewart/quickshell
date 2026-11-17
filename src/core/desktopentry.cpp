@@ -515,7 +515,9 @@ const QStringList& DesktopEntryManager::desktopPaths() {
 
 		auto programData = qEnvironmentVariable("ProgramData");
 		if (!programData.isEmpty()) {
-			dataPaths.append(QDir::fromNativeSeparators(programData) + "/Microsoft/Windows/Start Menu/Programs");
+			dataPaths.append(
+			    QDir::fromNativeSeparators(programData) + "/Microsoft/Windows/Start Menu/Programs"
+			);
 		}
 
 		return dataPaths;

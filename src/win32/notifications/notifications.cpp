@@ -158,9 +158,10 @@ void NotificationHost::onAccessChanged(bool allowed) {
 	this->mAccess = allowed;
 
 	if (!allowed) {
-		qCWarning(logNotifications)
-		    << "Windows does not allow this program to read notifications. Allow it under Settings > "
-		       "Privacy & security > Notifications.";
+		qCWarning(
+		    logNotifications
+		) << "Windows does not allow this program to read notifications. Allow it under Settings > "
+		     "Privacy & security > Notifications.";
 	}
 
 	emit this->accessChanged();

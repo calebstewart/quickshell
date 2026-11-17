@@ -139,7 +139,8 @@ public:
 	[[nodiscard]] bool connected() const { return this->state_.connected; }
 	void setConnected(bool connected);
 	[[nodiscard]] BluetoothDeviceState::Enum state() const {
-		return this->state_.connected ? BluetoothDeviceState::Connected : BluetoothDeviceState::Disconnected;
+		return this->state_.connected ? BluetoothDeviceState::Connected
+		                              : BluetoothDeviceState::Disconnected;
 	}
 	[[nodiscard]] bool yes() const { return true; }
 	[[nodiscard]] bool no() const { return false; }
@@ -246,9 +247,15 @@ class Bluetooth: public QObject {
 public:
 	explicit Bluetooth(QObject* parent = nullptr);
 
-	[[nodiscard]] BluetoothAdapter* defaultAdapter() const { return BluetoothHost::instance()->adapter(); } // NOLINT
-	[[nodiscard]] ObjectModel<BluetoothAdapter>* adapters() const { return BluetoothHost::instance()->adapters(); } // NOLINT
-	[[nodiscard]] ObjectModel<BluetoothDevice>* devices() const { return BluetoothHost::instance()->devices(); } // NOLINT
+	[[nodiscard]] BluetoothAdapter* defaultAdapter() const {
+		return BluetoothHost::instance()->adapter();
+	} // NOLINT
+	[[nodiscard]] ObjectModel<BluetoothAdapter>* adapters() const {
+		return BluetoothHost::instance()->adapters();
+	} // NOLINT
+	[[nodiscard]] ObjectModel<BluetoothDevice>* devices() const {
+		return BluetoothHost::instance()->devices();
+	} // NOLINT
 
 signals:
 	void defaultAdapterChanged();

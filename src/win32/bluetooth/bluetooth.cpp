@@ -59,7 +59,8 @@ void BluetoothAdapter::setEnabled(bool enabled) {
 }
 
 void BluetoothAdapter::setDiscovering(bool discovering) {
-	if (discovering) qCWarning(logBluetooth) << "Scanning for Bluetooth devices is not possible on Windows.";
+	if (discovering)
+		qCWarning(logBluetooth) << "Scanning for Bluetooth devices is not possible on Windows.";
 }
 
 BluetoothHost* BluetoothHost::instance() {

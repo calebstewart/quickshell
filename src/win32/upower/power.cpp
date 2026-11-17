@@ -84,10 +84,12 @@ void PowerHost::poll() {
 	auto state = UPowerDeviceState::Unknown;
 	if (present) {
 		if (charging) state = UPowerDeviceState::Charging;
-		else if (onBattery) state = percentage <= 0 ? UPowerDeviceState::Empty : UPowerDeviceState::Discharging;
+		else if (onBattery)
+			state = percentage <= 0 ? UPowerDeviceState::Empty : UPowerDeviceState::Discharging;
 		else if (status.ACLineStatus == LINE_ONLINE) {
 			// Plugged in and not charging: full, or held below full by the firmware.
-			state = percentage >= 0.99 ? UPowerDeviceState::FullyCharged : UPowerDeviceState::PendingCharge;
+			state =
+			    percentage >= 0.99 ? UPowerDeviceState::FullyCharged : UPowerDeviceState::PendingCharge;
 		}
 	}
 

@@ -57,7 +57,8 @@ const SharedMemoryApi& sharedMemoryApi() {
 		// NOLINTBEGIN
 		api.alloc = reinterpret_cast<decltype(api.alloc)>(GetProcAddress(module, MAKEINTRESOURCEA(7)));
 		api.lock = reinterpret_cast<decltype(api.lock)>(GetProcAddress(module, MAKEINTRESOURCEA(8)));
-		api.unlock = reinterpret_cast<decltype(api.unlock)>(GetProcAddress(module, MAKEINTRESOURCEA(9)));
+		api.unlock =
+		    reinterpret_cast<decltype(api.unlock)>(GetProcAddress(module, MAKEINTRESOURCEA(9)));
 		api.free = reinterpret_cast<decltype(api.free)>(GetProcAddress(module, MAKEINTRESOURCEA(10)));
 		// NOLINTEND
 		return api;
@@ -112,16 +113,14 @@ QString processName(HWND window) {
 	CloseHandle(process);
 
 	if (!ok) return QString();
-	return QFileInfo(QString::fromWCharArray(path, static_cast<qsizetype>(length))).completeBaseName();
+	return QFileInfo(QString::fromWCharArray(path, static_cast<qsizetype>(length)))
+	    .completeBaseName();
 }
 
 } // namespace
 
-QImage TrayImageHandle::requestImage(
-    const QString& /*unused*/,
-    QSize* size,
-    const QSize& requestedSize
-) {
+QImage
+TrayImageHandle::requestImage(const QString& /*unused*/, QSize* size, const QSize& requestedSize) {
 	auto image = this->item->image;
 
 	if (image.isNull()) {
@@ -291,8 +290,8 @@ LRESULT TrayHost::forward(WPARAM wParam, LPARAM lParam, bool* forwarded) const {
 	return static_cast<LRESULT>(result);
 }
 
-LRESULT TrayHost::forwardAppBar(WPARAM wParam, const AppBarMessageData& request, bool* forwarded)
-    const {
+LRESULT
+TrayHost::forwardAppBar(WPARAM wParam, const AppBarMessageData& request, bool* forwarded) const {
 	*forwarded = false;
 	if (this->previous == nullptr || !IsWindow(this->previous)) return 0;
 
@@ -325,7 +324,8 @@ LRESULT TrayHost::forwardAppBar(WPARAM wParam, const AppBarMessageData& request,
 	// request while still reporting success. The block is copied into one
 	// shared with that process, and its answer is copied back afterwards.
 	const auto& shared = sharedMemoryApi();
-	auto* senderHandle = reinterpret_cast<HANDLE>(static_cast<ULONG_PTR>(request.sharedMemory)); // NOLINT
+	auto* senderHandle =
+	    reinterpret_cast<HANDLE>(static_cast<ULONG_PTR>(request.sharedMemory)); // NOLINT
 	if (senderHandle == nullptr || !shared.available()) return send();
 
 	// The sender shared its block with this process, as the owner of the window
@@ -337,11 +337,13 @@ LRESULT TrayHost::forwardAppBar(WPARAM wParam, const AppBarMessageData& request,
 	GetWindowThreadProcessId(this->previous, &targetPid);
 
 	// The same block, shared with the real notification area's process.
-	auto* targetHandle = targetPid != 0 ? shared.alloc(senderData, SHARED_APPBAR_SIZE, targetPid) : nullptr;
+	auto* targetHandle =
+	    targetPid != 0 ? shared.alloc(senderData, SHARED_APPBAR_SIZE, targetPid) : nullptr;
 	LRESULT result = 0;
 
 	if (targetHandle != nullptr) {
-		message.sharedMemory = static_cast<ULONG64>(reinterpret_cast<ULONG_PTR>(targetHandle)); // NOLINT
+		message.sharedMemory =
+		    static_cast<ULONG64>(reinterpret_cast<ULONG_PTR>(targetHandle)); // NOLINT
 		result = send();
 
 		// A block is opened with the id of the process it was shared with.
@@ -368,7 +370,8 @@ LRESULT TrayHost::onCopyData(WPARAM wParam, LPARAM lParam) {
 	auto* copyData = reinterpret_cast<COPYDATASTRUCT*>(lParam); // NOLINT
 	auto handled = false;
 
-	if (copyData != nullptr && copyData->dwData == COPYDATA_NOTIFYICON && copyData->lpData != nullptr) {
+	if (copyData != nullptr && copyData->dwData == COPYDATA_NOTIFYICON && copyData->lpData != nullptr)
+	{
 		handled = this->onNotifyIcon(copyData->lpData, copyData->cbData);
 	}
 
@@ -380,7 +383,8 @@ LRESULT TrayHost::onCopyData(WPARAM wParam, LPARAM lParam) {
 	if (copyData != nullptr && copyData->dwData == COPYDATA_APPBAR
 	    && copyData->cbData == sizeof(AppBarMessageData) && copyData->lpData != nullptr)
 	{
-		result = this->forwardAppBar(wParam, *static_cast<AppBarMessageData*>(copyData->lpData), &forwarded);
+		result =
+		    this->forwardAppBar(wParam, *static_cast<AppBarMessageData*>(copyData->lpData), &forwarded);
 	} else {
 		result = this->forward(wParam, lParam, &forwarded);
 	}
@@ -454,7 +458,8 @@ bool TrayHost::onNotifyIcon(const void* data, DWORD size) {
 		if ((nid.uFlags & NIF_MESSAGE) != 0) item->callbackMessage = nid.uCallbackMessage;
 
 		if ((nid.uFlags & NIF_TIP) != 0) {
-			auto tip = QString::fromWCharArray(nid.szTip, static_cast<qsizetype>(wcsnlen(nid.szTip, 128)));
+			auto tip =
+			    QString::fromWCharArray(nid.szTip, static_cast<qsizetype>(wcsnlen(nid.szTip, 128)));
 			if (tip != item->mTitle) {
 				item->mTitle = tip;
 				emit item->titleChanged();
@@ -502,15 +507,7 @@ void TrayHost::maintain() {
 		// to means the taskbar restarted.
 		if (first != nullptr && first != this->previous) this->previous = first;
 
-		SetWindowPos(
-		    this->hwnd,
-		    HWND_TOPMOST,
-		    0,
-		    0,
-		    0,
-		    0,
-		    SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE
-		);
+		SetWindowPos(this->hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
 	}
 
 	// An application that exits without removing its icon leaves it behind.

@@ -15,11 +15,8 @@
 
 namespace qs::win32::media {
 
-QImage MediaArtHandle::requestImage(
-    const QString& /*unused*/,
-    QSize* size,
-    const QSize& requestedSize
-) {
+QImage
+MediaArtHandle::requestImage(const QString& /*unused*/, QSize* size, const QSize& requestedSize) {
 	auto image = this->player->art;
 
 	if (image.isNull()) {
@@ -62,8 +59,8 @@ QVariantMap MprisPlayer::metadata() const {
 }
 
 bool MprisPlayer::canControl() const {
-	return this->state.canPlay || this->state.canPause || this->state.canToggle
-	    || this->state.canNext || this->state.canPrevious;
+	return this->state.canPlay || this->state.canPause || this->state.canToggle || this->state.canNext
+	    || this->state.canPrevious;
 }
 
 qreal MprisPlayer::position() const {

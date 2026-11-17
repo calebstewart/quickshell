@@ -1,9 +1,11 @@
+// clang-format off
 // The Windows Runtime headers come first, before Qt defines its keyword macros.
 #include <winrt/Windows.Foundation.Collections.h>
 #include <winrt/Windows.Foundation.h>
 #include <winrt/Windows.Media.Control.h>
 #include <winrt/Windows.Media.h>
 #include <winrt/Windows.Storage.Streams.h>
+// clang-format on
 
 #include <atomic>
 #include <chrono>
@@ -86,7 +88,8 @@ void MediaWorker::start() {
 		    }
 		);
 	} catch (const winrt::hresult_error& error) {
-		qCWarning(logMedia) << "Could not access the system media sessions:" << toQString(error.message());
+		qCWarning(logMedia) << "Could not access the system media sessions:"
+		                    << toQString(error.message());
 		return;
 	}
 
@@ -200,12 +203,12 @@ void MediaWorker::refresh() {
 					if (size > 0 && size <= MAX_ART_BYTES) {
 						winrt::Windows::Storage::Streams::Buffer buffer(static_cast<uint32_t>(size));
 						auto read = stream
-						    .ReadAsync(
-						        buffer,
-						        static_cast<uint32_t>(size),
-						        winrt::Windows::Storage::Streams::InputStreamOptions::None
-						    )
-						    .get();
+						                .ReadAsync(
+						                    buffer,
+						                    static_cast<uint32_t>(size),
+						                    winrt::Windows::Storage::Streams::InputStreamOptions::None
+						                )
+						                .get();
 
 						entry.art = QByteArray(
 						    reinterpret_cast<const char*>(read.data()), // NOLINT

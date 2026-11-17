@@ -212,7 +212,9 @@ public:
 		return static_cast<MprisPlaybackState::Enum>(this->state.playbackState);
 	}
 	void setPlaybackState(MprisPlaybackState::Enum playbackState);
-	[[nodiscard]] bool isPlaying() const { return this->state.playbackState == MprisPlaybackState::Playing; }
+	[[nodiscard]] bool isPlaying() const {
+		return this->state.playbackState == MprisPlaybackState::Playing;
+	}
 	void setPlaying(bool playing);
 
 	[[nodiscard]] bool canControl() const;
@@ -301,7 +303,9 @@ class Mpris: public QObject {
 public:
 	explicit Mpris(QObject* parent = nullptr): QObject(parent) {}
 
-	[[nodiscard]] ObjectModel<MprisPlayer>* players() { return MediaHost::instance()->players(); } // NOLINT
+	[[nodiscard]] ObjectModel<MprisPlayer>* players() {
+		return MediaHost::instance()->players();
+	} // NOLINT
 };
 
 } // namespace qs::win32::media

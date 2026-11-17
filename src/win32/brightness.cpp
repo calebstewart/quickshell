@@ -73,11 +73,14 @@ constexpr int ATTEMPTS = 3;
 // plain VCP request is tried as well.
 bool readBrightness(HANDLE physical, DWORD& minimum, DWORD& current, DWORD& maximum) {
 	for (auto attempt = 0; attempt < ATTEMPTS; attempt++) {
-		if (GetMonitorBrightness(physical, &minimum, &current, &maximum) && maximum > minimum) return true;
+		if (GetMonitorBrightness(physical, &minimum, &current, &maximum) && maximum > minimum)
+			return true;
 
 		DWORD value = 0;
 		DWORD limit = 0;
-		if (GetVCPFeatureAndVCPFeatureReply(physical, VCP_LUMINANCE, nullptr, &value, &limit) && limit > 0) {
+		if (GetVCPFeatureAndVCPFeatureReply(physical, VCP_LUMINANCE, nullptr, &value, &limit)
+		    && limit > 0)
+		{
 			minimum = 0;
 			current = value;
 			maximum = limit;
@@ -130,7 +133,8 @@ void MonitorBrightness::refresh() {
 			    DWORD maximum = 0;
 			    if (!readBrightness(physical, minimum, current, maximum)) return false;
 
-			    brightness = static_cast<qreal>(current - minimum) / static_cast<qreal>(maximum - minimum);
+			    brightness =
+			        static_cast<qreal>(current - minimum) / static_cast<qreal>(maximum - minimum);
 			    return true;
 		    });
 
@@ -153,7 +157,9 @@ void MonitorBrightness::onRead(bool ok, qreal brightness) {
 	}
 
 	// A value assigned in the meantime is newer than what the monitor reported.
-	if (ok && this->pending < 0 && !this->writing && !qFuzzyCompare(brightness + 1, this->mBrightness + 1)) {
+	if (ok && this->pending < 0 && !this->writing
+	    && !qFuzzyCompare(brightness + 1, this->mBrightness + 1))
+	{
 		this->mBrightness = brightness;
 		emit this->brightnessChanged();
 	}
@@ -201,11 +207,13 @@ void MonitorBrightness::sendPending() {
 			    DWORD maximum = 0;
 			    if (!readBrightness(physical, minimum, current, maximum)) return false;
 
-			    auto target = minimum + static_cast<DWORD>(qRound(value * static_cast<qreal>(maximum - minimum)));
+			    auto target =
+			        minimum + static_cast<DWORD>(qRound(value * static_cast<qreal>(maximum - minimum)));
 			    return writeBrightness(physical, target);
 		    });
 
-		    if (!ok) qCDebug(logBrightness) << "Could not set monitor brightness, error" << GetLastError();
+		    if (!ok)
+			    qCDebug(logBrightness) << "Could not set monitor brightness, error" << GetLastError();
 
 		    QMetaObject::invokeMethod(
 		        QCoreApplication::instance(),

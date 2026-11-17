@@ -1,9 +1,11 @@
+// clang-format off
 // The Windows Runtime headers come first, before Qt defines its keyword macros.
 #include <winrt/Windows.Devices.Bluetooth.h>
 #include <winrt/Windows.Devices.Enumeration.h>
 #include <winrt/Windows.Devices.Radios.h>
 #include <winrt/Windows.Foundation.Collections.h>
 #include <winrt/Windows.Foundation.h>
+// clang-format on
 
 #include <atomic>
 
@@ -64,7 +66,8 @@ void BluetoothWorker::start() {
 			break;
 		}
 	} catch (const winrt::hresult_error& error) {
-		qCWarning(logBluetoothWorker) << "Could not access the Bluetooth radio:" << toQString(error.message());
+		qCWarning(logBluetoothWorker) << "Could not access the Bluetooth radio:"
+		                              << toQString(error.message());
 	}
 
 	// Whether a device is connected has no change event that covers both
@@ -96,8 +99,12 @@ void BluetoothWorker::refresh() {
 		// Classic and low energy devices are listed separately, and a device
 		// that supports both appears in each list.
 		auto selectors = {
-		    winrt::Windows::Devices::Bluetooth::BluetoothDevice::GetDeviceSelectorFromPairingState(true),
-		    winrt::Windows::Devices::Bluetooth::BluetoothLEDevice::GetDeviceSelectorFromPairingState(true),
+		    winrt::Windows::Devices::Bluetooth::BluetoothDevice::GetDeviceSelectorFromPairingState(
+		        true
+		    ),
+		    winrt::Windows::Devices::Bluetooth::BluetoothLEDevice::GetDeviceSelectorFromPairingState(
+		        true
+		    ),
 		};
 
 		for (const auto& selector: selectors) {
@@ -107,14 +114,14 @@ void BluetoothWorker::refresh() {
 				device.name = toQString(info.Name());
 
 				auto values = info.Properties();
-				device.connected = winrt::unbox_value_or<bool>(
-				    values.TryLookup(L"System.Devices.Aep.IsConnected"),
-				    false
+				device.connected =
+				    winrt::unbox_value_or<bool>(values.TryLookup(L"System.Devices.Aep.IsConnected"), false);
+				device.address = toQString(
+				    winrt::unbox_value_or<winrt::hstring>(
+				        values.TryLookup(L"System.Devices.Aep.DeviceAddress"),
+				        L""
+				    )
 				);
-				device.address = toQString(winrt::unbox_value_or<winrt::hstring>(
-				    values.TryLookup(L"System.Devices.Aep.DeviceAddress"),
-				    L""
-				));
 
 				DeviceSnapshot* existing = nullptr;
 				for (auto& known: snapshot.devices) {
@@ -126,11 +133,12 @@ void BluetoothWorker::refresh() {
 			}
 		}
 	} catch (const winrt::hresult_error& error) {
-		qCWarning(logBluetoothWorker) << "Could not list Bluetooth devices:" << toQString(error.message());
+		qCWarning(logBluetoothWorker) << "Could not list Bluetooth devices:"
+		                              << toQString(error.message());
 	}
 
-	qCDebug(logBluetoothWorker) << "Bluetooth radio present" << snapshot.hasRadio << "on" << snapshot.enabled
-	                            << "paired devices" << snapshot.devices.size();
+	qCDebug(logBluetoothWorker) << "Bluetooth radio present" << snapshot.hasRadio << "on"
+	                            << snapshot.enabled << "paired devices" << snapshot.devices.size();
 
 	emit this->changed(snapshot);
 }
@@ -146,7 +154,8 @@ void BluetoothWorker::setEnabled(bool enabled) {
 
 		this->d->radio.SetStateAsync(enabled ? RadioState::On : RadioState::Off).get();
 	} catch (const winrt::hresult_error& error) {
-		qCWarning(logBluetoothWorker) << "Could not switch the Bluetooth radio:" << toQString(error.message());
+		qCWarning(logBluetoothWorker) << "Could not switch the Bluetooth radio:"
+		                              << toQString(error.message());
 	}
 
 	this->refresh();

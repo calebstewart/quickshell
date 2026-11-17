@@ -42,7 +42,8 @@ namespace {
 // font files, for this process only. Where fontconfig exists a per-user font
 // directory already does this; elsewhere the alternative is a system install.
 void loadExtraFonts() {
-	auto entries = qEnvironmentVariable("QS_FONT_PATH").split(QDir::listSeparator(), Qt::SkipEmptyParts);
+	auto entries =
+	    qEnvironmentVariable("QS_FONT_PATH").split(QDir::listSeparator(), Qt::SkipEmptyParts);
 
 	for (const auto& entry: entries) {
 		QStringList files;

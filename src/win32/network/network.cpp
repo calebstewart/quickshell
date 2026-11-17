@@ -1,3 +1,4 @@
+// clang-format off
 // winsock2.h has to come before windows.h, which Qt's headers may bring in.
 #include <winsock2.h>
 #include <ws2tcpip.h>
@@ -6,6 +7,7 @@
 #include <iphlpapi.h>
 #include <objbase.h>
 #include <wlanapi.h>
+// clang-format on
 
 #include <algorithm>
 #include <atomic>
@@ -33,7 +35,15 @@ QS_LOGGING_CATEGORY(logNetwork, "quickshell.win32.network", QtWarningMsg);
 // Adapters that are not hardware the user would recognise: virtual switches,
 // tunnels, and Bluetooth's network profile.
 const char* const IGNORED_DESCRIPTIONS[] = {
-    "Hyper-V", "Virtual", "Bluetooth", "VPN", "TAP-", "Loopback", "WAN Miniport", "Wintun", "WireGuard",
+    "Hyper-V",
+    "Virtual",
+    "Bluetooth",
+    "VPN",
+    "TAP-",
+    "Loopback",
+    "WAN Miniport",
+    "Wintun",
+    "WireGuard",
 };
 
 QString formatGuid(const GUID& guid) {
@@ -54,7 +64,7 @@ QString formatMac(const BYTE* bytes, ULONG length) {
 QString formatIpv4(const SOCKADDR* address) {
 	if (address == nullptr || address->sa_family != AF_INET) return QString();
 
-	char text[INET_ADDRSTRLEN] = {}; // NOLINT
+	char text[INET_ADDRSTRLEN] = {};                          // NOLINT
 	auto* in = reinterpret_cast<const sockaddr_in*>(address); // NOLINT
 	if (inet_ntop(AF_INET, &in->sin_addr, text, sizeof(text)) == nullptr) return QString();
 	return QString::fromLatin1(text);
@@ -125,9 +135,11 @@ void WifiNetwork::update(const WifiNetworkData& data) {
 	auto old = this->data;
 	this->data = data;
 
-	if (old.connected != data.connected || old.connecting != data.connecting) emit this->connectedChanged();
+	if (old.connected != data.connected || old.connecting != data.connecting)
+		emit this->connectedChanged();
 	if (old.known != data.known) emit this->knownChanged();
-	if (!qFuzzyCompare(old.signalStrength + 1, data.signalStrength + 1)) emit this->signalStrengthChanged();
+	if (!qFuzzyCompare(old.signalStrength + 1, data.signalStrength + 1))
+		emit this->signalStrengthChanged();
 	if (old.security != data.security) emit this->securityChanged();
 	if (old.bssid != data.bssid) emit this->bssidChanged();
 	if (old.frequency != data.frequency) emit this->frequencyChanged();
@@ -137,8 +149,10 @@ void WifiNetwork::connect() {
 	if (this->data.connected) return;
 
 	if (!this->data.known || this->data.profile.isEmpty()) {
-		qCWarning(logNetwork) << "Connecting to a Wi-Fi network Windows has no saved profile for is not "
-		                         "implemented yet.";
+		qCWarning(
+		    logNetwork
+		) << "Connecting to a Wi-Fi network Windows has no saved profile for is not "
+		     "implemented yet.";
 		emit this->connectionFailed();
 		return;
 	}
@@ -213,7 +227,9 @@ void NetworkDevice::update(const DeviceData& data) {
 
 void NetworkDevice::disconnect() {
 	if (!this->data.wifi) {
-		qCWarning(logNetwork) << "A wired network device cannot be disconnected from software on Windows.";
+		qCWarning(
+		    logNetwork
+		) << "A wired network device cannot be disconnected from software on Windows.";
 		return;
 	}
 
@@ -260,7 +276,8 @@ NetworkHost::NetworkHost(): d(new Private()) {
 
 			    // The start and the outcome of a connection attempt name the network.
 			    auto code = data != nullptr ? data->NotificationCode : 0;
-			    auto aboutConnection = data != nullptr && data->NotificationSource == WLAN_NOTIFICATION_SOURCE_ACM
+			    auto aboutConnection = data != nullptr
+			                        && data->NotificationSource == WLAN_NOTIFICATION_SOURCE_ACM
 			                        && data->pData != nullptr
 			                        && data->dwDataSize >= sizeof(WLAN_CONNECTION_NOTIFICATION_DATA)
 			                        && (code == wlan_notification_acm_connection_start
@@ -335,7 +352,8 @@ bool NetworkHost::connectProfile(const QString& deviceId, const QString& profile
 	if (this->d->wlan == nullptr) return false;
 
 	GUID guid = {};
-	if (FAILED(CLSIDFromString(reinterpret_cast<LPCOLESTR>(deviceId.utf16()), &guid))) return false; // NOLINT
+	if (FAILED(CLSIDFromString(reinterpret_cast<LPCOLESTR>(deviceId.utf16()), &guid)))
+		return false; // NOLINT
 
 	auto name = profile.toStdWString();
 
@@ -358,7 +376,8 @@ void NetworkHost::disconnectDevice(const QString& deviceId) {
 	if (this->d->wlan == nullptr) return;
 
 	GUID guid = {};
-	if (FAILED(CLSIDFromString(reinterpret_cast<LPCOLESTR>(deviceId.utf16()), &guid))) return; // NOLINT
+	if (FAILED(CLSIDFromString(reinterpret_cast<LPCOLESTR>(deviceId.utf16()), &guid)))
+		return; // NOLINT
 
 	auto result = WlanDisconnect(this->d->wlan, &guid, nullptr);
 	if (result != ERROR_SUCCESS) qCWarning(logNetwork) << "Could not disconnect, error" << result;
@@ -386,7 +405,8 @@ void NetworkHost::scan(const QString& deviceId) {
 	if (this->d->wlan == nullptr) return;
 
 	GUID guid = {};
-	if (FAILED(CLSIDFromString(reinterpret_cast<LPCOLESTR>(deviceId.utf16()), &guid))) return; // NOLINT
+	if (FAILED(CLSIDFromString(reinterpret_cast<LPCOLESTR>(deviceId.utf16()), &guid)))
+		return; // NOLINT
 	WlanScan(this->d->wlan, &guid, nullptr, nullptr, nullptr);
 }
 
@@ -445,7 +465,8 @@ void NetworkHost::refresh() {
 		auto* adapter = reinterpret_cast<PIP_ADAPTER_ADDRESSES>(buffer.data()); // NOLINT
 
 		for (; adapter != nullptr; adapter = adapter->Next) {
-			if (adapter->IfType != IF_TYPE_ETHERNET_CSMACD && adapter->IfType != IF_TYPE_IEEE80211) continue;
+			if (adapter->IfType != IF_TYPE_ETHERNET_CSMACD && adapter->IfType != IF_TYPE_IEEE80211)
+				continue;
 
 			auto description = QString::fromWCharArray(adapter->Description);
 			auto ignored = std::ranges::any_of(IGNORED_DESCRIPTIONS, [&](const char* word) {
@@ -457,7 +478,8 @@ void NetworkHost::refresh() {
 			device.id = QString::fromLatin1(adapter->AdapterName).toUpper();
 			device.name = QString::fromWCharArray(adapter->FriendlyName);
 			device.description = description;
-			device.address = formatMac(adapter->PhysicalAddress, adapter->PhysicalAddressLength); // NOLINT
+			device.address =
+			    formatMac(adapter->PhysicalAddress, adapter->PhysicalAddressLength); // NOLINT
 			device.wifi = adapter->IfType == IF_TYPE_IEEE80211;
 			device.connected = adapter->OperStatus == IfOperStatusUp;
 
@@ -468,7 +490,10 @@ void NetworkHost::refresh() {
 
 			// A disconnected adapter still carries a self assigned address, which
 			// would read as if it were configured.
-			for (auto* unicast = device.connected ? adapter->FirstUnicastAddress : nullptr; unicast != nullptr; unicast = unicast->Next) {
+			for (auto* unicast = device.connected ? adapter->FirstUnicastAddress : nullptr;
+			     unicast != nullptr;
+			     unicast = unicast->Next)
+			{
 				auto ip = formatIpv4(unicast->Address.lpSockaddr);
 				if (ip.isEmpty()) continue;
 
@@ -477,7 +502,10 @@ void NetworkHost::refresh() {
 				break;
 			}
 
-			for (auto* gateway = device.connected ? adapter->FirstGatewayAddress : nullptr; gateway != nullptr; gateway = gateway->Next) {
+			for (auto* gateway = device.connected ? adapter->FirstGatewayAddress : nullptr;
+			     gateway != nullptr;
+			     gateway = gateway->Next)
+			{
 				auto ip = formatIpv4(gateway->Address.lpSockaddr);
 				if (ip.isEmpty()) continue;
 
@@ -485,7 +513,9 @@ void NetworkHost::refresh() {
 				break;
 			}
 
-			for (auto* dns = device.connected ? adapter->FirstDnsServerAddress : nullptr; dns != nullptr; dns = dns->Next) {
+			for (auto* dns = device.connected ? adapter->FirstDnsServerAddress : nullptr; dns != nullptr;
+			     dns = dns->Next)
+			{
 				auto ip = formatIpv4(dns->Address.lpSockaddr);
 				if (!ip.isEmpty()) device.dns.append(ip);
 			}
@@ -502,7 +532,9 @@ void NetworkHost::refresh() {
 	QStringList wlanInterfaces;
 
 	PWLAN_INTERFACE_INFO_LIST interfaces = nullptr;
-	if (this->d->wlan != nullptr && WlanEnumInterfaces(this->d->wlan, nullptr, &interfaces) == ERROR_SUCCESS) {
+	if (this->d->wlan != nullptr
+	    && WlanEnumInterfaces(this->d->wlan, nullptr, &interfaces) == ERROR_SUCCESS)
+	{
 		for (DWORD i = 0; i < interfaces->dwNumberOfItems; i++) {
 			auto& info = interfaces->InterfaceInfo[i]; // NOLINT
 			auto id = formatGuid(info.InterfaceGuid);
@@ -550,12 +582,12 @@ void NetworkHost::refresh() {
 			           &dataSize,
 			           reinterpret_cast<PVOID*>(&connection), // NOLINT
 			           nullptr
-			       )
-			           == ERROR_SUCCESS)
+			       ) == ERROR_SUCCESS)
 			{
 				connectedSsid = ssidOf(connection->wlanAssociationAttributes.dot11Ssid);
 				connectedBssid = formatMac(connection->wlanAssociationAttributes.dot11Bssid, 6);
-				connectedSignal = static_cast<qreal>(connection->wlanAssociationAttributes.wlanSignalQuality) / 100.0;
+				connectedSignal =
+				    static_cast<qreal>(connection->wlanAssociationAttributes.wlanSignalQuality) / 100.0;
 				WlanFreeMemory(connection);
 			}
 
@@ -575,7 +607,8 @@ void NetworkHost::refresh() {
 					network.ssid = ssid;
 					network.signalStrength =
 					    std::max(network.signalStrength, static_cast<qreal>(entry.wlanSignalQuality) / 100.0);
-					network.security = securityOf(entry.bSecurityEnabled != FALSE, entry.dot11DefaultAuthAlgorithm);
+					network.security =
+					    securityOf(entry.bSecurityEnabled != FALSE, entry.dot11DefaultAuthAlgorithm);
 					if ((entry.dwFlags & WLAN_AVAILABLE_NETWORK_HAS_PROFILE) != 0) {
 						network.known = true;
 						network.profile = QString::fromWCharArray(entry.strProfileName);
@@ -590,14 +623,14 @@ void NetworkHost::refresh() {
 			// The access points behind each network, for an address and a frequency.
 			PWLAN_BSS_LIST bssList = nullptr;
 			auto bssResult = WlanGetNetworkBssList(
-			        this->d->wlan,
-			        &info.InterfaceGuid,
-			        nullptr,
-			        dot11_BSS_type_any,
-			        FALSE,
-			        nullptr,
-			        &bssList
-			    );
+			    this->d->wlan,
+			    &info.InterfaceGuid,
+			    nullptr,
+			    dot11_BSS_type_any,
+			    FALSE,
+			    nullptr,
+			    &bssList
+			);
 
 			if (bssResult != ERROR_SUCCESS) {
 				qCDebug(logNetwork) << "Could not list access points, error" << bssResult;
@@ -648,7 +681,9 @@ void NetworkHost::refresh() {
 
 	// A Wi-Fi adapter the WLAN service does not list is a virtual one, such as
 	// those Windows creates for Wi-Fi Direct.
-	found.removeIf([&](const DeviceData& device) { return device.wifi && !wlanInterfaces.contains(device.id); });
+	found.removeIf([&](const DeviceData& device) {
+		return device.wifi && !wlanInterfaces.contains(device.id);
+	});
 
 	// Devices are kept by adapter id, so a binding to one survives a refresh.
 	auto existing = this->mDevices.valueList();

@@ -187,8 +187,12 @@ public:
 	explicit Pipewire(QObject* parent = nullptr);
 
 	[[nodiscard]] ObjectModel<PwNode>* nodes() { return AudioHost::instance()->nodes(); } // NOLINT
-	[[nodiscard]] PwNode* defaultAudioSink() const { return AudioHost::instance()->defaultSink(); } // NOLINT
-	[[nodiscard]] PwNode* defaultAudioSource() const { return AudioHost::instance()->defaultSource(); } // NOLINT
+	[[nodiscard]] PwNode* defaultAudioSink() const {
+		return AudioHost::instance()->defaultSink();
+	} // NOLINT
+	[[nodiscard]] PwNode* defaultAudioSource() const {
+		return AudioHost::instance()->defaultSource();
+	} // NOLINT
 	[[nodiscard]] bool ready() const { return true; } // NOLINT
 
 	void setPreferredDefaultAudioSink(PwNode* node);

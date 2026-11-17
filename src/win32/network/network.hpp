@@ -251,7 +251,9 @@ public:
 	void update(const DeviceData& data);
 
 	[[nodiscard]] QString id() const { return this->data.id; }
-	[[nodiscard]] DeviceType::Enum type() const { return this->data.wifi ? DeviceType::Wifi : DeviceType::Wired; }
+	[[nodiscard]] DeviceType::Enum type() const {
+		return this->data.wifi ? DeviceType::Wifi : DeviceType::Wired;
+	}
 	[[nodiscard]] QString name() const { return this->data.name; }
 	[[nodiscard]] QString description() const { return this->data.description; }
 	[[nodiscard]] ObjectModel<WifiNetwork>* networks() { return &this->mNetworks; }
@@ -347,12 +349,19 @@ public:
 	/// Reads the adapters and networks again now.
 	Q_INVOKABLE void refresh();
 
-	[[nodiscard]] ObjectModel<NetworkDevice>* devices() const { return NetworkHost::instance()->devices(); } // NOLINT
-	[[nodiscard]] bool wifiEnabled() const { return NetworkHost::instance()->wifiEnabled(); } // NOLINT
+	[[nodiscard]] ObjectModel<NetworkDevice>* devices() const {
+		return NetworkHost::instance()->devices();
+	} // NOLINT
+	[[nodiscard]] bool wifiEnabled() const {
+		return NetworkHost::instance()->wifiEnabled();
+	} // NOLINT
 	void setWifiEnabled(bool enabled);
-	[[nodiscard]] bool wifiHardwareEnabled() const { return NetworkHost::instance()->wifiHardwareEnabled(); } // NOLINT
+	[[nodiscard]] bool wifiHardwareEnabled() const {
+		return NetworkHost::instance()->wifiHardwareEnabled();
+	} // NOLINT
 	[[nodiscard]] NetworkConnectivity::Enum connectivity() const { // NOLINT
-		return NetworkHost::instance()->anyConnected() ? NetworkConnectivity::Full : NetworkConnectivity::None;
+		return NetworkHost::instance()->anyConnected() ? NetworkConnectivity::Full
+		                                               : NetworkConnectivity::None;
 	}
 
 signals:

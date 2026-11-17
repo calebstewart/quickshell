@@ -182,8 +182,12 @@ class UPower: public QObject {
 public:
 	explicit UPower(QObject* parent = nullptr);
 
-	[[nodiscard]] UPowerDevice* displayDevice() const { return PowerHost::instance()->battery(); } // NOLINT
-	[[nodiscard]] ObjectModel<UPowerDevice>* devices() const { return PowerHost::instance()->devices(); } // NOLINT
+	[[nodiscard]] UPowerDevice* displayDevice() const {
+		return PowerHost::instance()->battery();
+	} // NOLINT
+	[[nodiscard]] ObjectModel<UPowerDevice>* devices() const {
+		return PowerHost::instance()->devices();
+	} // NOLINT
 	[[nodiscard]] bool onBattery() const { return PowerHost::instance()->onBattery(); } // NOLINT
 
 signals:
@@ -209,7 +213,7 @@ public:
 
 	[[nodiscard]] PowerProfile::Enum profile() const { return PowerProfile::Balanced; } // NOLINT
 	void setProfile(PowerProfile::Enum profile);
-	[[nodiscard]] bool hasPerformanceProfile() const { return true; } // NOLINT
+	[[nodiscard]] bool hasPerformanceProfile() const { return true; }            // NOLINT
 	[[nodiscard]] PerformanceDegradationReason::Enum degradationReason() const { // NOLINT
 		return PerformanceDegradationReason::None;
 	}

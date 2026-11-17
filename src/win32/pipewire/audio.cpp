@@ -49,7 +49,8 @@ QString stringProperty(IPropertyStore* store, const PROPERTYKEY& key) {
 	PropVariantInit(&value);
 
 	QString result;
-	if (SUCCEEDED(store->GetValue(key, &value)) && value.vt == VT_LPWSTR && value.pwszVal != nullptr) {
+	if (SUCCEEDED(store->GetValue(key, &value)) && value.vt == VT_LPWSTR && value.pwszVal != nullptr)
+	{
 		result = QString::fromWCharArray(value.pwszVal);
 	}
 
@@ -140,11 +141,17 @@ public:
 	}
 
 	// NOLINTBEGIN
-	HRESULT STDMETHODCALLTYPE OnDeviceStateChanged(LPCWSTR, DWORD) override { return this->changed(); }
+	HRESULT STDMETHODCALLTYPE OnDeviceStateChanged(LPCWSTR, DWORD) override {
+		return this->changed();
+	}
 	HRESULT STDMETHODCALLTYPE OnDeviceAdded(LPCWSTR) override { return this->changed(); }
 	HRESULT STDMETHODCALLTYPE OnDeviceRemoved(LPCWSTR) override { return this->changed(); }
-	HRESULT STDMETHODCALLTYPE OnDefaultDeviceChanged(EDataFlow, ERole, LPCWSTR) override { return this->changed(); }
-	HRESULT STDMETHODCALLTYPE OnPropertyValueChanged(LPCWSTR, const PROPERTYKEY) override { return S_OK; }
+	HRESULT STDMETHODCALLTYPE OnDefaultDeviceChanged(EDataFlow, ERole, LPCWSTR) override {
+		return this->changed();
+	}
+	HRESULT STDMETHODCALLTYPE OnPropertyValueChanged(LPCWSTR, const PROPERTYKEY) override {
+		return S_OK;
+	}
 	// NOLINTEND
 
 private:

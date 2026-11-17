@@ -1,3 +1,4 @@
+// clang-format off
 // The Windows Runtime headers come first, before Qt defines its keyword macros.
 #include <winrt/Windows.ApplicationModel.h>
 #include <winrt/Windows.Foundation.Collections.h>
@@ -5,6 +6,7 @@
 #include <winrt/Windows.Storage.Streams.h>
 #include <winrt/Windows.UI.Notifications.Management.h>
 #include <winrt/Windows.UI.Notifications.h>
+// clang-format on
 
 #include <set>
 
@@ -61,12 +63,12 @@ ToastSnapshot snapshotOf(const UserNotification& notification) {
 				if (size > 0 && size <= MAX_LOGO_BYTES) {
 					winrt::Windows::Storage::Streams::Buffer buffer(static_cast<uint32_t>(size));
 					auto read = stream
-					    .ReadAsync(
-					        buffer,
-					        static_cast<uint32_t>(size),
-					        winrt::Windows::Storage::Streams::InputStreamOptions::None
-					    )
-					    .get();
+					                .ReadAsync(
+					                    buffer,
+					                    static_cast<uint32_t>(size),
+					                    winrt::Windows::Storage::Streams::InputStreamOptions::None
+					                )
+					                .get();
 
 					toast.logo = QByteArray(
 					    reinterpret_cast<const char*>(read.data()), // NOLINT
@@ -76,11 +78,13 @@ ToastSnapshot snapshotOf(const UserNotification& notification) {
 			}
 		}
 	} catch (const winrt::hresult_error& error) {
-		qCDebug(logNotificationWorker) << "Could not read a notification's application:" << toQString(error.message());
+		qCDebug(logNotificationWorker)
+		    << "Could not read a notification's application:" << toQString(error.message());
 	}
 
 	try {
-		auto binding = notification.Notification().Visual().GetBinding(KnownNotificationBindings::ToastGeneric());
+		auto binding =
+		    notification.Notification().Visual().GetBinding(KnownNotificationBindings::ToastGeneric());
 
 		if (binding) {
 			// The first line of text is the title and the rest is the body.
@@ -101,7 +105,8 @@ ToastSnapshot snapshotOf(const UserNotification& notification) {
 			toast.body = body.join('\n');
 		}
 	} catch (const winrt::hresult_error& error) {
-		qCDebug(logNotificationWorker) << "Could not read a notification's text:" << toQString(error.message());
+		qCDebug(logNotificationWorker)
+		    << "Could not read a notification's text:" << toQString(error.message());
 	}
 
 	if (toast.appName.isEmpty()) toast.appName = toast.appId;
@@ -128,7 +133,8 @@ void NotificationWorker::start() {
 		winrt::init_apartment(winrt::apartment_type::multi_threaded);
 		this->d->listener = UserNotificationListener::Current();
 	} catch (const winrt::hresult_error& error) {
-		qCWarning(logNotificationWorker) << "Could not reach the notification listener:" << toQString(error.message());
+		qCWarning(logNotificationWorker)
+		    << "Could not reach the notification listener:" << toQString(error.message());
 	}
 
 	// The listener's change event is only delivered to packaged applications,
@@ -167,7 +173,8 @@ void NotificationWorker::poll() {
 			allowed = status == UserNotificationListenerAccessStatus::Allowed;
 			qCDebug(logNotificationWorker) << "Notification access status" << static_cast<int>(status);
 		} catch (const winrt::hresult_error& error) {
-			qCDebug(logNotificationWorker) << "Could not check notification access:" << toQString(error.message());
+			qCDebug(logNotificationWorker)
+			    << "Could not check notification access:" << toQString(error.message());
 		}
 
 		if (allowed != this->d->allowed || !this->d->accessReported) {
@@ -182,11 +189,14 @@ void NotificationWorker::poll() {
 	std::set<quint32> current;
 
 	try {
-		for (const auto& notification: this->d->listener.GetNotificationsAsync(NotificationKinds::Toast).get()) {
+		for (const auto& notification:
+		     this->d->listener.GetNotificationsAsync(NotificationKinds::Toast).get())
+		{
 			auto id = notification.Id();
 			current.insert(id);
 
-			if (!this->d->known.contains(id) && !this->d->firstPoll) emit this->added(snapshotOf(notification));
+			if (!this->d->known.contains(id) && !this->d->firstPoll)
+				emit this->added(snapshotOf(notification));
 		}
 	} catch (const winrt::hresult_error& error) {
 		qCDebug(logNotificationWorker) << "Could not list notifications:" << toQString(error.message());
@@ -207,7 +217,8 @@ void NotificationWorker::remove(quint32 id) {
 	try {
 		this->d->listener.RemoveNotification(id);
 	} catch (const winrt::hresult_error& error) {
-		qCDebug(logNotificationWorker) << "Could not remove notification" << id << toQString(error.message());
+		qCDebug(logNotificationWorker)
+		    << "Could not remove notification" << id << toQString(error.message());
 	}
 
 	// Already gone as far as the configuration is concerned.
