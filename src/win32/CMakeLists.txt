@@ -24,3 +24,4 @@ target_link_libraries(quickshell PRIVATE quickshell-win32plugin quickshell-win32
 add_subdirectory(wayland)
 add_subdirectory(hyprland)
 add_subdirectory(systemtray)
+add_subdirectory(pipewire)
