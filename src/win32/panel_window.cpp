@@ -66,6 +66,68 @@ void takeForeground(HWND hwnd) {
 	SetForegroundWindow(hwnd);
 }
 
+bool isOurs(HWND window) {
+	DWORD pid = 0;
+	GetWindowThreadProcessId(window, &pid);
+	return pid == GetCurrentProcessId();
+}
+
+// The desktop and the taskbar cover a monitor without being an application.
+bool isShellWindow(HWND window) {
+	if (window == GetShellWindow()) return true;
+
+	wchar_t name[64] = {}; // NOLINT
+	GetClassNameW(window, name, 64);
+	auto className = QString::fromWCharArray(name);
+	return className == "Progman" || className == "WorkerW" || className == "Shell_TrayWnd"
+	    || className == "Shell_SecondaryTrayWnd";
+}
+
+bool coversMonitor(HWND window, HMONITOR monitor) {
+	MONITORINFO info = {};
+	info.cbSize = sizeof(info);
+	RECT rect = {};
+	if (GetMonitorInfoW(monitor, &info) == 0 || GetWindowRect(window, &rect) == 0) return false;
+
+	const auto& screen = info.rcMonitor;
+	return rect.left <= screen.left && rect.top <= screen.top && rect.right >= screen.right
+	    && rect.bottom >= screen.bottom;
+}
+
+// Whether a fullscreen application is showing on a monitor: a game, or a
+// video a browser has put fullscreen.
+//
+// The shell tells registered app bars about this, but only some panels are
+// app bars, and the one that matters most, an overlay covering the screen, is
+// not. So this watches the foreground window instead. A window that covers
+// its whole monitor is remembered for that monitor until it stops doing so or
+// another window comes forward on the same monitor. Turning to a different
+// monitor leaves it be, as does one of our own panels taking the keyboard.
+//
+// A maximised window does not count: it fills the work area, which panels
+// that reserve space keep smaller than the monitor.
+bool monitorHasFullscreenWindow(HMONITOR monitor) {
+	static std::map<HMONITOR, HWND> covering; // NOLINT
+
+	auto* foreground = GetForegroundWindow();
+	if (foreground != nullptr && !isOurs(foreground) && !isShellWindow(foreground)) {
+		auto* on = MonitorFromWindow(foreground, MONITOR_DEFAULTTONULL);
+		if (on != nullptr) {
+			if (coversMonitor(foreground, on)) covering[on] = foreground;
+			else covering.erase(on);
+		}
+	}
+
+	auto entry = covering.find(monitor);
+	if (entry == covering.end()) return false;
+
+	auto* window = entry->second;
+	auto stillThere = IsWindow(window) != 0 && IsWindowVisible(window) != 0 && IsIconic(window) == 0
+	               && coversMonitor(window, monitor);
+	if (!stillThere) covering.erase(entry);
+	return stillThere;
+}
+
 } // namespace
 
 class WinPanelStack {
@@ -149,6 +211,11 @@ WinPanelWindow::WinPanelWindow(QObject* parent): ProxyWindowBase(parent) {
 	this->cursorTimer.setInterval(8);
 	this->cursorTimer.setTimerType(Qt::PreciseTimer);
 	QObject::connect(&this->cursorTimer, &QTimer::timeout, this, &WinPanelWindow::pollCursor);
+
+	// See pollFullscreen(). Going fullscreen is not something a person does
+	// many times a second.
+	this->fullscreenTimer.setInterval(250);
+	QObject::connect(&this->fullscreenTimer, &QTimer::timeout, this, &WinPanelWindow::pollFullscreen);
 
 	this->bcExclusiveZone.setBinding([this]() -> qint32 {
 		switch (this->bExclusionMode.value()) {
@@ -241,9 +308,12 @@ void WinPanelWindow::onWindowVisibleChanged() {
 	if (this->window->isVisible()) {
 		WinPanelStack::instance()->addPanel(this);
 		this->updateDimensions();
+		this->fullscreenTimer.start();
 	} else {
 		this->removeAppBar();
 		WinPanelStack::instance()->removePanel(this);
+		this->fullscreenTimer.stop();
+		this->belowFullscreen = false;
 	}
 
 	this->updateInputTracking();
@@ -429,6 +499,37 @@ void WinPanelWindow::updateAboveWindows() {
 	auto above = this->bAboveWindows.value();
 	this->window->setFlag(Qt::WindowStaysOnBottomHint, !above);
 	this->window->setFlag(Qt::WindowStaysOnTopHint, above);
+}
+
+// A panel above other windows would also sit above a fullscreen application,
+// where a layer shell compositor puts it below. While such an application
+// covers this panel's monitor the panel goes to the bottom of the window
+// order, and comes back when the application is gone.
+//
+// A panel that wants the keyboard is left alone, so a launcher opened by a
+// key still shows over a game.
+void WinPanelWindow::pollFullscreen() {
+	auto* hwnd = nativeHandle(this->window);
+	if (hwnd == nullptr) return;
+
+	auto lower = this->bAboveWindows.value() && !this->bFocusable.value()
+	          && monitorHasFullscreenWindow(MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST));
+
+	const auto flags = SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE;
+
+	if (lower) {
+		// Checked every time and not only on a change: Qt reapplies the
+		// window's styles, this one included, when a flag changes.
+		auto topmost = (GetWindowLongPtrW(hwnd, GWL_EXSTYLE) & WS_EX_TOPMOST) != 0;
+		if (topmost || !this->belowFullscreen) {
+			SetWindowPos(hwnd, HWND_NOTOPMOST, 0, 0, 0, 0, flags);
+			SetWindowPos(hwnd, HWND_BOTTOM, 0, 0, 0, 0, flags);
+		}
+	} else if (this->belowFullscreen) {
+		SetWindowPos(hwnd, this->bAboveWindows.value() ? HWND_TOPMOST : HWND_BOTTOM, 0, 0, 0, 0, flags);
+	}
+
+	this->belowFullscreen = lower;
 }
 
 void WinPanelWindow::updateFocusable() {

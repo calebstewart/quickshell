@@ -105,6 +105,7 @@ private slots:
 	void onWindowVisibleChanged();
 	void updateDimensionsSlot();
 	void pollCursor();
+	void pollFullscreen();
 
 private:
 	void updateScreen();
@@ -126,6 +127,9 @@ private:
 	bool hasInputMask = false;
 	QRegion inputMask;
 	QTimer cursorTimer;
+	QTimer fullscreenTimer;
+	// Put behind a fullscreen application for as long as it covers the monitor.
+	bool belowFullscreen = false;
 
 	// clang-format off
 	Q_OBJECT_BINDABLE_PROPERTY_WITH_ARGS(WinPanelWindow, bool, bAboveWindows, true, &WinPanelWindow::aboveWindowsChanged);
