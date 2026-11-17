@@ -9,10 +9,10 @@
 # directory holds the build trees and can be kept between runs. The output
 # directory is replaced.
 #
-# The result:
+# The result, with the program at the top so the directory can go on PATH:
 #
-#   bin/        quickshell.exe, Qt, the compiler runtime and every other DLL
-#   bin/qt.conf tells Qt where the two directories below are
+#   quickshell.exe, Qt, the compiler runtime and every other DLL
+#   qt.conf     tells Qt where the two directories below are
 #   plugins/    Qt plugins
 #   qml/        Qt's QML modules, Caelestia and M3Shapes
 #   manifest.json
@@ -92,22 +92,22 @@ cmake --install "$work/m3shapes-build"
 
 echo "== Bundle"
 rm -rf "${out:?}"/*
-mkdir -p "$out/bin" "$out/plugins" "$out/qml"
+mkdir -p "$out/plugins" "$out/qml"
 
-cp "$work/quickshell/quickshell.exe" "$out/bin/"
+cp "$work/quickshell/quickshell.exe" "$out/"
 cp -r "$mingw/share/qt6/plugins/." "$out/plugins/"
 cp -r "$mingw/share/qt6/qml/." "$out/qml/"
 cp -r "$prefix/qml/." "$out/qml/"
 
 # Windows looks for a DLL beside the program and on PATH, not beside the
-# plugin that asks for it, so the libraries the two plugins share go in bin.
-mv "$out/qml/Caelestia/lib/"*.dll "$out/bin/"
+# plugin that asks for it, so the libraries the two plugins share go beside the program.
+mv "$out/qml/Caelestia/lib/"*.dll "$out/"
 rmdir "$out/qml/Caelestia/lib"
-mv "$out/qml/M3Shapes/m3shapes.dll" "$out/bin/"
+mv "$out/qml/M3Shapes/m3shapes.dll" "$out/"
 
-cat >"$out/bin/qt.conf" <<'EOF'
+cat >"$out/qt.conf" <<'EOF'
 [Paths]
-Prefix = ..
+Prefix = .
 Plugins = plugins
 QmlImports = qml
 EOF
@@ -123,8 +123,8 @@ while :; do
 		grep -qxF "$file" "$seen" && continue
 		echo "$file" >>"$seen"
 		for dll in $(objdump -p "$file" 2>/dev/null | sed -n 's/^\s*DLL Name: //p'); do
-			if [ ! -e "$out/bin/$dll" ] && [ -e "$mingw/bin/$dll" ]; then
-				cp "$mingw/bin/$dll" "$out/bin/"
+			if [ ! -e "$out/$dll" ] && [ -e "$mingw/bin/$dll" ]; then
+				cp "$mingw/bin/$dll" "$out/"
 				added=1
 			fi
 		done
@@ -148,4 +148,4 @@ find "$out" -type f \( -iname '*.dll' -o -iname '*.exe' \) -exec strip --strip-u
 	printf '}\n'
 } >"$out/manifest.json"
 
-echo "bundle in $out: $(du -sh "$out" | cut -f1), $(find "$out/bin" -name '*.dll' | wc -l) DLLs in bin"
+echo "bundle in $out: $(du -sh "$out" | cut -f1), $(find "$out" -maxdepth 1 -name "*.dll" | wc -l) DLLs beside the program"
