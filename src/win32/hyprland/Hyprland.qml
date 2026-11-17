@@ -36,6 +36,11 @@ Singleton {
     // True once state has been received from komorebi at least once.
     property bool ready: false
 
+    // Returned by monitorFor() until komorebi has reported its monitors, so
+    // configurations that read a monitor at startup do not meet null. Bindings
+    // that called monitorFor() are evaluated again once the real ones exist.
+    readonly property HyprlandMonitor placeholderMonitor: HyprlandMonitor {}
+
     readonly property string pipeName: `quickshell-komorebi-${Quickshell.processId}-${Math.random().toString(36).slice(2, 8)}`
 
     property var monitorsByKey: ({})
@@ -45,7 +50,7 @@ Singleton {
 
     function monitorFor(screen: var): HyprlandMonitor {
         if (!screen)
-            return focusedMonitor ?? monitors.values[0] ?? null;
+            return focusedMonitor ?? monitors.values[0] ?? placeholderMonitor;
 
         // Qt names a screen after its model ("DELL U2723QE (1)") and komorebi
         // after its display device ("DISPLAY1"), so names cannot be compared.
@@ -62,7 +67,7 @@ Singleton {
         if (byPosition)
             return byPosition;
 
-        return focusedMonitor ?? monitors.values[0] ?? null;
+        return focusedMonitor ?? monitors.values[0] ?? placeholderMonitor;
     }
 
     function refreshMonitors(): void {
