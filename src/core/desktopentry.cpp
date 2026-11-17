@@ -392,7 +392,11 @@ void DesktopEntryScanner::scanDirectory(
 			// Applications are Start Menu shortcuts on Windows. A shortcut is
 			// opened through the shell, which resolves its target, arguments and
 			// working directory, and its icon is whatever the shell shows for it.
-			if (!path.endsWith(".lnk", Qt::CaseInsensitive)) continue;
+			// An internet shortcut counts too: it is how a program launched by
+			// URL, such as a Steam game, puts itself in the Start Menu.
+			auto isShortcut =
+			    path.endsWith(".lnk", Qt::CaseInsensitive) || path.endsWith(".url", Qt::CaseInsensitive);
+			if (!isShortcut) continue;
 
 			auto shortcutName = entry.completeBaseName();
 
