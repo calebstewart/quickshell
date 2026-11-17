@@ -16,6 +16,8 @@
 #include <commoncontrols.h>
 #include <shellapi.h>
 
+#include "win32.hpp"
+
 namespace {
 
 // The icon the shell shows for a file, from its large icon lists. Unlike the
@@ -108,10 +110,17 @@ IconImageProvider::requestPixmap(const QString& id, QSize* size, const QSize& re
 	// icon the shell shows for that file, which for a shortcut or a program is
 	// the application's own.
 	if (icon.isNull()) {
+		auto decoded = QUrl::fromPercentEncoding(iconName.toUtf8());
 		auto file = QFileInfo(iconName);
-		if (!file.exists()) file = QFileInfo(QUrl::fromPercentEncoding(iconName.toUtf8()));
+		if (!file.exists()) file = QFileInfo(decoded);
 
-		if (file.isAbsolute() && file.exists()) {
+		if (decoded.startsWith("shell:")) {
+			// Something only the shell can name, such as a packaged
+			// application. Written with forward slashes to survive being
+			// part of a URL.
+			auto image = qs::win32::shellItemImage(decoded.replace('/', '\\'), 256);
+			if (!image.isNull()) icon = QIcon(QPixmap::fromImage(image));
+		} else if (file.isAbsolute() && file.exists()) {
 			auto image = shellIcon(file.absoluteFilePath());
 			if (!image.isNull()) icon = QIcon(QPixmap::fromImage(image));
 			else icon = QAbstractFileIconProvider().icon(file);

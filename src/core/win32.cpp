@@ -7,9 +7,15 @@
 #include <io.h>
 #include <qdir.h>
 #include <qfile.h>
+#include <qimage.h>
+#include <qlist.h>
 #include <qstring.h>
 #include <windows.h>
 #include <winioctl.h>
+// windows.h must come first
+#include <objbase.h>
+#include <shlobj.h>
+#include <shobjidl.h>
 
 namespace qs::win32 {
 
@@ -145,6 +151,106 @@ bool replaceDirLink(const QString& target, const QString& link) {
 	}
 
 	return true;
+}
+
+namespace {
+
+// COM for the calling thread, for as long as this lives. A thread already
+// using COM another way keeps its own setup, which works just as well here.
+class ComScope {
+public:
+	ComScope(): initialised(SUCCEEDED(CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED))) {}
+	~ComScope() {
+		if (this->initialised) CoUninitialize();
+	}
+	Q_DISABLE_COPY_MOVE(ComScope);
+
+private:
+	bool initialised;
+};
+
+QString takeString(PWSTR string) {
+	if (string == nullptr) return {};
+	auto result = QString::fromWCharArray(string);
+	CoTaskMemFree(string);
+	return result;
+}
+
+} // namespace
+
+QList<PackagedApp> packagedApps() {
+	QList<PackagedApp> apps;
+	auto com = ComScope();
+
+	// The Apps folder is what the Start Menu's list of all applications shows.
+	IShellItem* folder = nullptr;
+	if (FAILED(SHCreateItemFromParsingName(L"shell:AppsFolder", nullptr, IID_PPV_ARGS(&folder)))) {
+		return apps;
+	}
+
+	IEnumShellItems* items = nullptr;
+	if (SUCCEEDED(folder->BindToHandler(nullptr, BHID_EnumItems, IID_PPV_ARGS(&items)))) {
+		IShellItem* item = nullptr;
+		while (items->Next(1, &item, nullptr) == S_OK) {
+			PWSTR name = nullptr;
+			PWSTR appId = nullptr;
+			item->GetDisplayName(SIGDN_NORMALDISPLAY, &name);
+			item->GetDisplayName(SIGDN_PARENTRELATIVEPARSING, &appId);
+			item->Release();
+
+			auto app = PackagedApp {.name = takeString(name), .appId = takeString(appId)};
+
+			// The folder also lists every shortcut in the Start Menu. A
+			// packaged application is the one whose ID is a package family
+			// name and an application in it, joined by an exclamation mark.
+			if (!app.name.isEmpty() && app.appId.contains('!')) apps.append(std::move(app));
+		}
+
+		items->Release();
+	}
+
+	folder->Release();
+	return apps;
+}
+
+QImage shellItemImage(const QString& parsingName, int size) {
+	auto com = ComScope();
+
+	IShellItemImageFactory* factory = nullptr;
+	auto name = parsingName.toStdWString();
+	if (FAILED(SHCreateItemFromParsingName(name.c_str(), nullptr, IID_PPV_ARGS(&factory)))) return {};
+
+	HBITMAP bitmap = nullptr;
+	auto hr = factory->GetImage(SIZE {.cx = size, .cy = size}, SIIGBF_ICONONLY, &bitmap);
+	factory->Release();
+	if (FAILED(hr) || bitmap == nullptr) return {};
+
+	// Copied out by hand: the bitmap carries transparency, which Qt's own
+	// conversion keeps for some bitmaps and drops for others.
+	BITMAP info = {};
+	if (GetObjectW(bitmap, sizeof(info), &info) == 0 || info.bmWidth <= 0 || info.bmHeight <= 0) {
+		DeleteObject(bitmap);
+		return {};
+	}
+
+	auto image = QImage(info.bmWidth, info.bmHeight, QImage::Format_ARGB32_Premultiplied);
+
+	BITMAPINFO format = {};
+	format.bmiHeader.biSize = sizeof(format.bmiHeader);
+	format.bmiHeader.biWidth = info.bmWidth;
+	// Negative, for rows from the top down, as the image stores them.
+	format.bmiHeader.biHeight = -info.bmHeight;
+	format.bmiHeader.biPlanes = 1;
+	format.bmiHeader.biBitCount = 32;
+	format.bmiHeader.biCompression = BI_RGB;
+
+	auto* dc = GetDC(nullptr);
+	auto rows = GetDIBits(dc, bitmap, 0, info.bmHeight, image.bits(), &format, DIB_RGB_COLORS);
+	ReleaseDC(nullptr, dc);
+	DeleteObject(bitmap);
+
+	if (rows == 0) return {};
+	return image;
 }
 
 } // namespace qs::win32

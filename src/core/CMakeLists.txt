@@ -63,7 +63,7 @@ target_link_libraries(quickshell-core PRIVATE Qt::Quick Qt::QuickPrivate Qt::Wid
 if (WIN32)
 	target_sources(quickshell-core PRIVATE win32.cpp)
 	# Application icons come from the shell.
-	target_link_libraries(quickshell-core PRIVATE shell32 ole32)
+	target_link_libraries(quickshell-core PRIVATE shell32 ole32 uuid gdi32)
 else()
 	target_link_libraries(quickshell-core PRIVATE PkgConfig::libdrm)
 endif()

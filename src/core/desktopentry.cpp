@@ -28,6 +28,8 @@
 
 #ifdef Q_OS_WIN
 #include <qstandardpaths.h>
+
+#include "win32.hpp"
 #endif
 
 namespace {
@@ -365,6 +367,20 @@ void DesktopEntryScanner::run() {
 
 		this->scanDirectory(QDir(path), QString(), scanResults);
 	}
+
+#ifdef Q_OS_WIN
+	// Packaged applications, such as those from the Store, have no shortcut
+	// in the folders above. The shell starts one given its ID.
+	for (const auto& app: qs::win32::packagedApps()) {
+		ParsedDesktopEntryData entry;
+		entry.id = app.appId;
+		entry.name = app.name;
+		entry.icon = "shell:AppsFolder/" + app.appId;
+		entry.command = {"explorer.exe", "shell:AppsFolder\\" + app.appId};
+		entry.execString = entry.command.join(' ');
+		scanResults.append(std::move(entry));
+	}
+#endif
 
 	QMetaObject::invokeMethod(
 	    this->manager,
