@@ -20,3 +20,5 @@ target_link_libraries(quickshell-win32-init PRIVATE Qt::Quick Qt::Qml)
 qs_module_pch(quickshell-win32 SET large)
 
 target_link_libraries(quickshell PRIVATE quickshell-win32plugin quickshell-win32-init)
+
+add_subdirectory(wayland)
