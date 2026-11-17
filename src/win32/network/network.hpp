@@ -22,9 +22,10 @@
 // its IP configuration, which the Linux module leaves to NetworkManager
 // settings objects.
 //
-// This is read only. Connecting to, disconnecting from and forgetting a
-// network are not implemented and log a warning. The Wi-Fi radio can be
-// switched and a scan requested.
+// A Wi-Fi adapter can connect to a network Windows has a saved profile for,
+// and disconnect. The radio can be switched and a scan requested. Connecting
+// to a network for the first time and forgetting one are not implemented and
+// log a warning.
 
 namespace qs::win32::network {
 
@@ -114,7 +115,11 @@ struct WifiNetworkData {
 	quint32 frequency = 0;
 	WifiSecurityType::Enum security = WifiSecurityType::Unknown;
 	bool connected = false;
+	// True while the adapter is associating with this network.
+	bool connecting = false;
 	bool known = false;
+	// The name of the saved profile, if Windows has one.
+	QString profile;
 };
 
 ///! A Wi-Fi network in range.
@@ -128,7 +133,8 @@ class WifiNetwork: public QObject {
 	/// True if Windows has a saved profile for the network.
 	Q_PROPERTY(bool known READ known NOTIFY knownChanged);
 	Q_PROPERTY(qs::win32::network::ConnectionState::Enum state READ state NOTIFY connectedChanged);
-	Q_PROPERTY(bool stateChanging READ no CONSTANT);
+	/// True while the adapter is associating with the network.
+	Q_PROPERTY(bool stateChanging READ stateChanging NOTIFY connectedChanged);
 	/// Signal strength from 0 to 1.
 	Q_PROPERTY(qreal signalStrength READ signalStrength NOTIFY signalStrengthChanged);
 	Q_PROPERTY(qs::win32::network::WifiSecurityType::Enum security READ security NOTIFY securityChanged);
@@ -143,11 +149,14 @@ class WifiNetwork: public QObject {
 public:
 	explicit WifiNetwork(const WifiNetworkData& data, NetworkDevice* device);
 
-	/// Not implemented on Windows yet. Logs a warning.
+	/// Connects using the profile Windows has saved for the network. Only
+	/// possible if @@known is true. The outcome shows in @@state, and
+	/// connectionFailed is emitted if it does not work.
 	Q_INVOKABLE void connect();
-	/// Not implemented on Windows yet. Logs a warning.
+	/// Connects like connect() if the network is known. Creating a profile
+	/// from a password is not implemented on Windows yet.
 	Q_INVOKABLE void connectWithPsk(const QString& psk);
-	/// Not implemented on Windows yet. Logs a warning.
+	/// Disconnects the adapter if it is connected to this network.
 	Q_INVOKABLE void disconnect();
 	/// Not implemented on Windows yet. Logs a warning.
 	Q_INVOKABLE void forget();
@@ -159,9 +168,10 @@ public:
 	[[nodiscard]] bool connected() const { return this->data.connected; }
 	[[nodiscard]] bool known() const { return this->data.known; }
 	[[nodiscard]] ConnectionState::Enum state() const {
+		if (this->data.connecting) return ConnectionState::Connecting;
 		return this->data.connected ? ConnectionState::Connected : ConnectionState::Disconnected;
 	}
-	[[nodiscard]] bool no() const { return false; }
+	[[nodiscard]] bool stateChanging() const { return this->data.connecting; }
 	[[nodiscard]] qreal signalStrength() const { return this->data.signalStrength; }
 	[[nodiscard]] WifiSecurityType::Enum security() const { return this->data.security; }
 	[[nodiscard]] QString bssid() const { return this->data.bssid; }
@@ -169,6 +179,8 @@ public:
 
 signals:
 	void connectedChanged();
+	/// Sent when an attempt to connect to the network did not succeed.
+	void connectionFailed();
 	void knownChanged();
 	void signalStrengthChanged();
 	void securityChanged();
@@ -231,7 +243,7 @@ class NetworkDevice: public QObject {
 public:
 	explicit NetworkDevice(const DeviceData& data, QObject* parent);
 
-	/// Not implemented on Windows yet. Logs a warning.
+	/// Disconnects a Wi-Fi adapter from its network. Not possible for a wired one.
 	Q_INVOKABLE void disconnect();
 	/// Asks a Wi-Fi adapter to look for networks now.
 	Q_INVOKABLE void scan();
@@ -282,6 +294,10 @@ public:
 	[[nodiscard]] bool anyConnected() const;
 	void setWifiEnabled(bool enabled);
 	void scan(const QString& deviceId);
+	bool connectProfile(const QString& deviceId, const QString& profile);
+	void disconnectDevice(const QString& deviceId);
+	// Reports the outcome of a connection attempt. Queued from the WLAN service's thread.
+	void onConnectionResult(const QString& ssid, bool succeeded);
 
 	// Asks for a refresh from any thread. Requests made while one is pending are merged.
 	void requestRefresh();

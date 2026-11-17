@@ -125,7 +125,7 @@ void WifiNetwork::update(const WifiNetworkData& data) {
 	auto old = this->data;
 	this->data = data;
 
-	if (old.connected != data.connected) emit this->connectedChanged();
+	if (old.connected != data.connected || old.connecting != data.connecting) emit this->connectedChanged();
 	if (old.known != data.known) emit this->knownChanged();
 	if (!qFuzzyCompare(old.signalStrength + 1, data.signalStrength + 1)) emit this->signalStrengthChanged();
 	if (old.security != data.security) emit this->securityChanged();
@@ -134,15 +134,29 @@ void WifiNetwork::update(const WifiNetworkData& data) {
 }
 
 void WifiNetwork::connect() {
-	qCWarning(logNetwork) << "Connecting to a Wi-Fi network is not implemented on Windows yet.";
+	if (this->data.connected) return;
+
+	if (!this->data.known || this->data.profile.isEmpty()) {
+		qCWarning(logNetwork) << "Connecting to a Wi-Fi network Windows has no saved profile for is not "
+		                         "implemented yet.";
+		emit this->connectionFailed();
+		return;
+	}
+
+	if (!NetworkHost::instance()->connectProfile(this->mDevice->id(), this->data.profile)) {
+		emit this->connectionFailed();
+	}
 }
 
 void WifiNetwork::connectWithPsk(const QString& /*unused*/) {
-	qCWarning(logNetwork) << "Connecting to a Wi-Fi network is not implemented on Windows yet.";
+	// A saved profile already holds the key. Without one, a profile would have
+	// to be created from the key, which is not implemented yet.
+	this->connect();
 }
 
 void WifiNetwork::disconnect() {
-	qCWarning(logNetwork) << "Disconnecting from a Wi-Fi network is not implemented on Windows yet.";
+	if (!this->data.connected && !this->data.connecting) return;
+	NetworkHost::instance()->disconnectDevice(this->mDevice->id());
 }
 
 void WifiNetwork::forget() {
@@ -198,7 +212,12 @@ void NetworkDevice::update(const DeviceData& data) {
 }
 
 void NetworkDevice::disconnect() {
-	qCWarning(logNetwork) << "Disconnecting a network device is not implemented on Windows yet.";
+	if (!this->data.wifi) {
+		qCWarning(logNetwork) << "A wired network device cannot be disconnected from software on Windows.";
+		return;
+	}
+
+	NetworkHost::instance()->disconnectDevice(this->data.id);
 }
 
 void NetworkDevice::scan() {
@@ -215,6 +234,8 @@ void NetworkDevice::setScannerEnabled(bool enabled) {
 struct NetworkHost::Private {
 	HANDLE wlan = nullptr;
 	std::atomic<bool> refreshPending = false;
+	// The network a connection attempt is in progress for, if any.
+	QString connectingSsid;
 };
 
 NetworkHost* NetworkHost::instance() {
@@ -228,13 +249,48 @@ NetworkHost::NetworkHost(): d(new Private()) {
 		// The WLAN service is not running, as on a machine without Wi-Fi.
 		this->d->wlan = nullptr;
 	} else {
-		// Called on a thread of the WLAN service, so it only asks for a refresh.
+		// Called on a thread of the WLAN service, so it only queues work for the
+		// thread this object lives on.
 		WlanRegisterNotification(
 		    this->d->wlan,
 		    WLAN_NOTIFICATION_SOURCE_ACM | WLAN_NOTIFICATION_SOURCE_MSM,
 		    TRUE,
-		    [](PWLAN_NOTIFICATION_DATA /*unused*/, PVOID context) {
-			    static_cast<NetworkHost*>(context)->requestRefresh();
+		    [](PWLAN_NOTIFICATION_DATA data, PVOID context) {
+			    auto* host = static_cast<NetworkHost*>(context);
+
+			    // The start and the outcome of a connection attempt name the network.
+			    auto code = data != nullptr ? data->NotificationCode : 0;
+			    auto aboutConnection = data != nullptr && data->NotificationSource == WLAN_NOTIFICATION_SOURCE_ACM
+			                        && data->pData != nullptr
+			                        && data->dwDataSize >= sizeof(WLAN_CONNECTION_NOTIFICATION_DATA)
+			                        && (code == wlan_notification_acm_connection_start
+			                            || code == wlan_notification_acm_connection_complete
+			                            || code == wlan_notification_acm_connection_attempt_fail);
+
+			    if (aboutConnection) {
+				    auto* connection = static_cast<PWLAN_CONNECTION_NOTIFICATION_DATA>(data->pData);
+				    auto ssid = ssidOf(connection->dot11Ssid);
+				    auto started = code == wlan_notification_acm_connection_start;
+				    auto succeeded = code == wlan_notification_acm_connection_complete
+				                  && connection->wlanReasonCode == WLAN_REASON_CODE_SUCCESS;
+
+				    QMetaObject::invokeMethod(
+				        host,
+				        [host, ssid, started, succeeded] {
+					        if (started) {
+						        host->d->connectingSsid = ssid;
+						        host->refresh();
+					        } else {
+						        host->onConnectionResult(ssid, succeeded);
+					        }
+				        },
+				        Qt::QueuedConnection
+				    );
+
+				    return;
+			    }
+
+			    host->requestRefresh();
 		    },
 		    this,
 		    nullptr,
@@ -255,6 +311,13 @@ NetworkHost::NetworkHost(): d(new Private()) {
 	this->scanTimer.start(15000);
 
 	this->refresh();
+
+	// Without a recent scan the list holds little more than the connected network.
+	// Called on this object directly: going through instance() from here would
+	// wait on its own construction.
+	for (auto* device: this->mDevices.valueList()) {
+		if (device->type() == DeviceType::Wifi) this->scan(device->id());
+	}
 }
 
 void NetworkHost::requestRefresh() {
@@ -266,6 +329,57 @@ bool NetworkHost::anyConnected() const {
 	return std::ranges::any_of(this->mDevices.valueList(), [](NetworkDevice* device) {
 		return device->connected();
 	});
+}
+
+bool NetworkHost::connectProfile(const QString& deviceId, const QString& profile) {
+	if (this->d->wlan == nullptr) return false;
+
+	GUID guid = {};
+	if (FAILED(CLSIDFromString(reinterpret_cast<LPCOLESTR>(deviceId.utf16()), &guid))) return false; // NOLINT
+
+	auto name = profile.toStdWString();
+
+	WLAN_CONNECTION_PARAMETERS parameters = {};
+	parameters.wlanConnectionMode = wlan_connection_mode_profile;
+	parameters.strProfile = name.c_str();
+	parameters.dot11BssType = dot11_BSS_type_infrastructure;
+
+	// Returns as soon as the attempt has started. Its outcome arrives as a notification.
+	auto result = WlanConnect(this->d->wlan, &guid, &parameters, nullptr);
+	if (result != ERROR_SUCCESS) {
+		qCWarning(logNetwork) << "Could not start connecting to" << profile << "error" << result;
+		return false;
+	}
+
+	return true;
+}
+
+void NetworkHost::disconnectDevice(const QString& deviceId) {
+	if (this->d->wlan == nullptr) return;
+
+	GUID guid = {};
+	if (FAILED(CLSIDFromString(reinterpret_cast<LPCOLESTR>(deviceId.utf16()), &guid))) return; // NOLINT
+
+	auto result = WlanDisconnect(this->d->wlan, &guid, nullptr);
+	if (result != ERROR_SUCCESS) qCWarning(logNetwork) << "Could not disconnect, error" << result;
+
+	// Windows can drop a network from its list when the adapter leaves it, if
+	// there has been no scan for a while. A scan brings it back, so the network
+	// just left can be chosen again.
+	WlanScan(this->d->wlan, &guid, nullptr, nullptr, nullptr);
+}
+
+void NetworkHost::onConnectionResult(const QString& ssid, bool succeeded) {
+	this->d->connectingSsid.clear();
+	this->refresh();
+
+	if (succeeded) return;
+
+	for (auto* device: this->mDevices.valueList()) {
+		for (auto* network: device->networks()->valueList()) {
+			if (network->name() == ssid) emit network->connectionFailed();
+		}
+	}
 }
 
 void NetworkHost::scan(const QString& deviceId) {
@@ -462,7 +576,11 @@ void NetworkHost::refresh() {
 					network.signalStrength =
 					    std::max(network.signalStrength, static_cast<qreal>(entry.wlanSignalQuality) / 100.0);
 					network.security = securityOf(entry.bSecurityEnabled != FALSE, entry.dot11DefaultAuthAlgorithm);
-					if ((entry.dwFlags & WLAN_AVAILABLE_NETWORK_HAS_PROFILE) != 0) network.known = true;
+					if ((entry.dwFlags & WLAN_AVAILABLE_NETWORK_HAS_PROFILE) != 0) {
+						network.known = true;
+						network.profile = QString::fromWCharArray(entry.strProfileName);
+					}
+
 					if ((entry.dwFlags & WLAN_AVAILABLE_NETWORK_CONNECTED) != 0) network.connected = true;
 				}
 
@@ -508,6 +626,8 @@ void NetworkHost::refresh() {
 			}
 
 			for (auto& [ssid, network]: networks) {
+				if (ssid == this->d->connectingSsid && ssid != connectedSsid) network.connecting = true;
+
 				if (ssid == connectedSsid) {
 					network.connected = true;
 					// The list above is from the last scan. The association is current.
