@@ -1,4 +1,5 @@
 #include <qapplication.h>
+#include <qcontainerfwd.h>
 #include <qcoreapplication.h>
 #include <qcryptographichash.h>
 #include <qdebug.h>
@@ -15,7 +16,6 @@
 #include <qqmldebug.h>
 #include <qquickwindow.h>
 #include <qstring.h>
-#include <qstringlist.h>
 #include <qtenvironmentvariables.h>
 #include <qtextstream.h>
 #include <unistd.h>
