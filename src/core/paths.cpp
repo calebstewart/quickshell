@@ -18,9 +18,23 @@
 #include "instanceinfo.hpp"
 #include "logcat.hpp"
 
+#ifdef Q_OS_WIN
+#include "win32.hpp"
+#endif
+
 namespace {
 QS_LOGGING_CATEGORY(logPaths, "quickshell.paths", QtWarningMsg);
+
+// Creates a link at `link` pointing to the directory `target`.
+bool linkDir(const QDir& target, const QString& link) {
+#ifdef Q_OS_WIN
+	return qs::win32::replaceDirLink(target.path(), link);
+#else
+	QFile::remove(link);
+	return symlinkat(target.filesystemCanonicalPath().c_str(), 0, link.toStdString().c_str()) == 0;
+#endif
 }
+} // namespace
 
 QsPaths* QsPaths::instance() {
 	static auto* instance = new QsPaths(); // NOLINT
@@ -64,7 +78,12 @@ QDir* QsPaths::baseRunDir() {
 	if (this->baseRunState == DirState::Unknown) {
 		auto runtimeDir = qEnvironmentVariable("XDG_RUNTIME_DIR");
 		if (runtimeDir.isEmpty()) {
+#ifdef Q_OS_WIN
+			// The per user temporary directory is the closest thing to a runtime directory.
+			runtimeDir = QStandardPaths::writableLocation(QStandardPaths::TempLocation);
+#else
 			runtimeDir = QString("/run/user/%1").arg(getuid());
+#endif
 			qCInfo(logPaths) << "XDG_RUNTIME_DIR was not set, defaulting to" << runtimeDir;
 		}
 
@@ -181,11 +200,7 @@ void QsPaths::linkRunDir() {
 		} else {
 			auto shellPath = shellDir->filePath(runDir->dirName());
 
-			QFile::remove(shellPath);
-			auto r =
-			    symlinkat(runDir->filesystemCanonicalPath().c_str(), 0, shellPath.toStdString().c_str());
-
-			if (r != 0) {
+			if (!linkDir(*runDir, shellPath)) {
 				qCCritical(logPaths).nospace()
 				    << "Could not create id symlink to " << runDir->path() << " at " << shellPath
 				    << " with error code " << errno << ": " << qt_error_string();
@@ -200,11 +215,7 @@ void QsPaths::linkRunDir() {
 		} else {
 			auto pidPath = pidDir.filePath(QString::number(getpid()));
 
-			QFile::remove(pidPath);
-			auto r =
-			    symlinkat(runDir->filesystemCanonicalPath().c_str(), 0, pidPath.toStdString().c_str());
-
-			if (r != 0) {
+			if (!linkDir(*runDir, pidPath)) {
 				qCCritical(logPaths).nospace()
 				    << "Could not create PID symlink to " << runDir->path() << " at " << pidPath
 				    << " with error code " << errno << ": " << qt_error_string();
@@ -230,11 +241,7 @@ void QsPaths::linkPathDir() {
 
 		auto linkPath = pathDir.filePath(this->pathId);
 
-		QFile::remove(linkPath);
-		auto r =
-		    symlinkat(runDir->filesystemCanonicalPath().c_str(), 0, linkPath.toStdString().c_str());
-
-		if (r != 0) {
+		if (!linkDir(*runDir, linkPath)) {
 			qCCritical(logPaths).nospace()
 			    << "Could not create path symlink to " << runDir->path() << " at " << linkPath
 			    << " with error code " << errno << ": " << qt_error_string();
@@ -361,6 +368,9 @@ void QsPaths::createLock() {
 			return;
 		}
 
+#ifdef Q_OS_WIN
+		auto locked = qs::win32::tryLockMarker(*file) == qs::win32::LockResult::Acquired;
+#else
 		struct flock lock = {
 		    .l_type = F_WRLCK,
 		    .l_whence = SEEK_SET,
@@ -369,7 +379,10 @@ void QsPaths::createLock() {
 		    .l_pid = 0,
 		};
 
-		if (fcntl(file->handle(), F_SETLK, &lock) != 0) { // NOLINT
+		auto locked = fcntl(file->handle(), F_SETLK, &lock) == 0; // NOLINT
+#endif
+
+		if (!locked) {
 			qCCritical(logPaths).nospace() << "Could not lock instance lock at " << path
 			                               << " with error code " << errno << ": " << qt_error_string();
 		} else {
@@ -389,6 +402,9 @@ bool QsPaths::checkLock(const QString& path, InstanceLockInfo* info, bool allowD
 	auto file = QFile(QDir(path).filePath("instance.lock"));
 	if (!file.open(QFile::ReadOnly)) return false;
 
+#ifdef Q_OS_WIN
+	auto isLocked = qs::win32::isMarkerLocked(file);
+#else
 	struct flock lock = {
 	    .l_type = F_WRLCK,
 	    .l_whence = SEEK_SET,
@@ -399,14 +415,20 @@ bool QsPaths::checkLock(const QString& path, InstanceLockInfo* info, bool allowD
 
 	fcntl(file.handle(), F_GETLK, &lock); // NOLINT
 	auto isLocked = lock.l_type != F_UNLCK;
+#endif
 
 	if (!isLocked && !allowDead) return false;
 
 	if (info) {
-		info->pid = isLocked ? lock.l_pid : -1;
-
 		auto stream = QDataStream(&file);
 		stream >> info->instance;
+
+#ifdef Q_OS_WIN
+		// Windows cannot report which process holds a lock, so trust the recorded pid.
+		info->pid = isLocked ? info->instance.pid : -1;
+#else
+		info->pid = isLocked ? lock.l_pid : -1;
+#endif
 	}
 
 	return true;

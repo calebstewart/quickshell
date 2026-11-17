@@ -312,7 +312,15 @@ void Process::onStderrReadyRead() {
 
 void Process::signal(qint32 signal) {
 	if (this->process == nullptr) return;
+
+#ifdef Q_OS_WIN
+	// Windows has no signals to deliver. SIGTERM asks the process to close and
+	// everything else ends it, which is the closest match to what callers expect.
+	if (signal == SIGTERM) this->process->terminate();
+	else this->process->kill();
+#else
 	kill(static_cast<qint32>(this->process->processId()), signal); // NOLINT
+#endif
 }
 
 void Process::write(const QString& data) {

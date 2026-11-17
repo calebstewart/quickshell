@@ -88,10 +88,16 @@ void IpcServerConnection::onReadyRead() {
 	    command
 	);
 
+#ifdef Q_OS_WIN
+	// Closing the server end of a named pipe drops a response the client has
+	// not read yet, which loses most replies. The connection is instead left
+	// open until the client disconnects, see onDisconnected().
+#else
 	// async connections reparent
 	if (dynamic_cast<IpcServer*>(this->parent()) != nullptr) {
 		this->deleteLater();
 	}
+#endif
 }
 
 IpcClient::IpcClient(const QString& path) {

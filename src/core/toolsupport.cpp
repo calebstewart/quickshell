@@ -16,6 +16,10 @@
 #include "paths.hpp"
 #include "scan.hpp"
 
+#ifdef Q_OS_WIN
+#include "win32.hpp"
+#endif
+
 namespace qs::core {
 
 namespace {
@@ -54,6 +58,11 @@ bool QmlToolingSupport::lockTooling() {
 		return false;
 	}
 
+#ifdef Q_OS_WIN
+	auto result = qs::win32::tryLockMarker(*file);
+	auto acquired = result == qs::win32::LockResult::Acquired;
+	auto contended = result == qs::win32::LockResult::Contended;
+#else
 	struct flock lock = {
 	    .l_type = F_WRLCK,
 	    .l_whence = SEEK_SET, // NOLINT (fcntl.h??)
@@ -62,11 +71,15 @@ bool QmlToolingSupport::lockTooling() {
 	    .l_pid = 0,
 	};
 
-	if (fcntl(file->handle(), F_SETLK, &lock) == 0) {
+	auto acquired = fcntl(file->handle(), F_SETLK, &lock) == 0;
+	auto contended = !acquired && (errno == EACCES || errno == EAGAIN);
+#endif
+
+	if (acquired) {
 		qCInfo(logTooling) << "Acquired tooling support lock";
 		QmlToolingSupport::toolingLock = file;
 		return true;
-	} else if (errno == EACCES || errno == EAGAIN) {
+	} else if (contended) {
 		qCInfo(logTooling) << "Tooling support locked by another instance";
 		return false;
 	} else {

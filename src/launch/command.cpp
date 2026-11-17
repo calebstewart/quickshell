@@ -20,6 +20,7 @@
 #include <qlogging.h>
 #include <qloggingcategory.h>
 #include <qnamespace.h>
+#include <qprocess.h>
 #include <qstandardpaths.h>
 #include <qtenvironmentvariables.h>
 #include <qtversion.h>
@@ -509,6 +510,23 @@ int runCommand(int argc, char** argv) {
 	}
 
 	// Has to happen before extra threads are spawned.
+#ifdef Q_OS_WIN
+	// There is no fork on Windows, so the daemon is a detached copy of this
+	// process. Unlike the fork below, the parent does not wait to learn whether
+	// the daemon launched successfully.
+	if (state.misc.daemonize && !qEnvironmentVariableIsSet("__QS_DAEMONIZED")) {
+		qputenv("__QS_DAEMONIZED", "1");
+
+		QStringList args;
+		for (auto i = 1; i < argc; i++) args.append(QString::fromLocal8Bit(argv[i])); // NOLINT
+
+		if (!QProcess::startDetached(QString::fromLocal8Bit(argv[0]), args)) { // NOLINT
+			qFatal() << "Failed to launch daemon process";
+		}
+
+		return 0;
+	}
+#else
 	if (state.misc.daemonize) {
 		auto closepipes = std::array<int, 2>();
 		if (pipe(closepipes.data()) == -1) {
@@ -539,6 +557,7 @@ int runCommand(int argc, char** argv) {
 			return ret;
 		}
 	}
+#endif
 
 	{
 		auto level = state.log.verbosity == 0 ? QtWarningMsg

@@ -13,11 +13,20 @@
 #include <qscopeguard.h>
 #include <qtversion.h>
 #include <unistd.h>
+
+#ifdef Q_OS_WIN
+#include <cstdlib>
+
+#include <qsysinfo.h>
+#else
 #include <xf86drm.h>
+#endif
 
 #include "build.hpp"
 
+#ifndef Q_OS_WIN
 extern char** environ; // NOLINT
+#endif
 
 namespace qs::debuginfo {
 
@@ -27,6 +36,20 @@ QString qsVersion() {
 
 QString qtVersion() { return qVersion() % QStringLiteral(" (built against " QT_VERSION_STR ")"); }
 
+#ifdef Q_OS_WIN
+QString gpuInfo() { return QStringLiteral("GPU information is not collected on Windows.\n"); }
+
+QString systemInfo() {
+	QString info;
+	auto stream = QTextStream(&info);
+
+	stream << gpuInfo() << '\n';
+	stream << "System: " << QSysInfo::prettyProductName() << " (kernel " << QSysInfo::kernelVersion()
+	       << ", " << QSysInfo::currentCpuArchitecture() << ")\n";
+
+	return info;
+}
+#else
 QString gpuInfo() {
 	auto deviceCount = drmGetDevices2(0, nullptr, 0);
 	if (deviceCount < 0) return "Failed to get DRM device count: " % QString::number(deviceCount);
@@ -123,6 +146,7 @@ QString systemInfo() {
 
 	return info;
 }
+#endif
 
 QString envInfo() {
 	QString info;
